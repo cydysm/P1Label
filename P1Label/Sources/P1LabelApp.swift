@@ -205,7 +205,10 @@ final class PrintModel: ObservableObject {
             status = "未发现蓝牙打印机"
             if mode == .ble { scanForPrinters() }
         default:
-            status = "连接失败：\(error.localizedDescription)"
+            // localizedDescription on these plain Error enums renders the
+            // useless "The operation couldn't be completed. (… error N.)";
+            // the enums carry real Chinese descriptions via description.
+            status = "连接失败：\(String(describing: error))"
         }
     }
 
@@ -287,7 +290,7 @@ final class PrintModel: ObservableObject {
             } catch {
                 await MainActor.run {
                     self.printing = false
-                    self.status = "打印失败：\(error.localizedDescription)"
+                    self.status = "打印失败：\(String(describing: error))"
                 }
             }
         }
@@ -521,42 +524,56 @@ struct ContentView: View {
     }
 
     private var statusHeader: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(model.connected ? Color.green : Color.red)
-                .frame(width: 9, height: 9)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.status).font(.callout)
-                if !model.deviceSummary.isEmpty {
-                    Text(model.deviceSummary).font(.caption).foregroundStyle(.secondary)
+        // Two rows: status + mode picker on top, connection actions below.
+        // Squeezing all three into one HStack let a long error message wrap
+        // into a narrow column and shove the controls aside.
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(model.connected ? Color.green
+                          : (model.connecting ? Color.orange : Color.red))
+                    .frame(width: 9, height: 9)
+                Text(model.status)
+                    .font(.callout)
+                    .lineLimit(2)
+                    .help(model.status)
+                Spacer()
+                Picker("连接方式", selection: Binding(get: { model.mode }, set: { model.switchMode($0) })) {
+                    Text("USB").tag(TransportMode.usb)
+                    Text("蓝牙").tag(TransportMode.ble)
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 118)
+                .disabled(model.printing || model.connecting)
             }
-            Spacer()
-            if model.mode == .ble && !model.connected && !model.bleDevices.isEmpty {
-                Menu("选择打印机") {
-                    ForEach(model.bleDevices) { d in
-                        Button(deviceLabel(d)) { model.selectBLEDevice(d) }
-                    }
-                }
+            if !model.deviceSummary.isEmpty {
+                Text(model.deviceSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(model.deviceSummary)
             }
             if !model.connected {
-                Button(model.mode == .ble && !model.hasSavedBLEDevice ? "扫描" : "重连") {
-                    if model.mode == .ble && !model.hasSavedBLEDevice {
-                        model.scanForPrinters()
-                    } else {
-                        model.connect()
+                HStack(spacing: 8) {
+                    Button(model.mode == .ble && !model.hasSavedBLEDevice ? "扫描" : "重连") {
+                        if model.mode == .ble && !model.hasSavedBLEDevice {
+                            model.scanForPrinters()
+                        } else {
+                            model.connect()
+                        }
+                    }
+                    .disabled(model.connecting)
+                    if model.mode == .ble && !model.bleDevices.isEmpty {
+                        Menu("选择打印机") {
+                            ForEach(model.bleDevices) { d in
+                                Button(deviceLabel(d)) { model.selectBLEDevice(d) }
+                            }
+                        }
                     }
                 }
-                .disabled(model.connecting)
             }
-            Picker("连接方式", selection: Binding(get: { model.mode }, set: { model.switchMode($0) })) {
-                Text("USB").tag(TransportMode.usb)
-                Text("蓝牙").tag(TransportMode.ble)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 118)
-            .disabled(model.printing || model.connecting)
         }
         .padding(.vertical, 2)
     }
