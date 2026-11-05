@@ -86,7 +86,7 @@ struct LabelCanvas: View {
                     // inputs (elements, scale) don't change during a drag and the
                     // Equatable conformance lets SwiftUI skip re-rendering it, so
                     // a drag frame only repaints the small live layer below.
-                    ElementsCanvas(elements: staticElements, s: s)
+                    ElementsCanvas(elements: staticElements, s: s, printableWidth: printableWidth)
                         .equatable()
                         .frame(width: paperW, height: paperH)
                         .border(Color.gray.opacity(0.4), width: 1)
@@ -134,11 +134,20 @@ struct LabelCanvas: View {
         return doc.elements.filter { $0.id != d.id }
     }
 
+    /// The doc's printable width in dots (raster minus calibration insets).
+    /// Measurement and clamps use this so the canvas matches what actually
+    /// prints — essential for narrower paper presets.
+    private var printableWidth: Int {
+        LabelRenderer.paperWidthDots(doc)
+    }
+
     /// Element bounds in paper points.
     private func elementRect(_ el: LabelElement, s: CGFloat,
                              x: Int, y: Int, fontSize: CGFloat, size: Int) -> CGRect {
-        let w = CGFloat(el.displayWidth(fontSize: fontSize, size: size, x: x)) * s
-        let h = CGFloat(el.displayHeight(fontSize: fontSize, size: size, x: x)) * s
+        let w = CGFloat(el.displayWidth(fontSize: fontSize, size: size, x: x,
+                                        printableWidth: printableWidth)) * s
+        let h = CGFloat(el.displayHeight(fontSize: fontSize, size: size, x: x,
+                                         printableWidth: printableWidth)) * s
         return CGRect(x: CGFloat(x) * s, y: CGFloat(y) * s, width: w, height: h)
     }
 
@@ -235,8 +244,10 @@ struct LabelCanvas: View {
     private func snapped(tx: inout Int, ty: inout Int, moving el: LabelElement,
                          s: CGFloat) -> (x: CGFloat?, y: CGFloat?) {
         let th = Double(Self.snapRadiusPoints / s)
-        let w = CGFloat(el.displayWidth(fontSize: el.fontSize, size: el.size, x: tx))
-        let h = CGFloat(el.displayHeight(fontSize: el.fontSize, size: el.size, x: tx))
+        let w = CGFloat(el.displayWidth(fontSize: el.fontSize, size: el.size, x: tx,
+                                        printableWidth: printableWidth))
+        let h = CGFloat(el.displayHeight(fontSize: el.fontSize, size: el.size, x: tx,
+                                         printableWidth: printableWidth))
         let rect = CGRect(x: CGFloat(tx), y: CGFloat(ty), width: w, height: h)
 
         // Paper edges + center, then every other element's edges + center.
@@ -294,7 +305,7 @@ struct LabelCanvas: View {
         switch d.mode {
         case .move:
             guard d.dx != 0 || d.dy != 0 else { return }
-            doc.elements[idx].x = max(0, min(d.base.x + d.dx, LabelDocument.paperWidthDots))
+            doc.elements[idx].x = max(0, min(d.base.x + d.dx, printableWidth))
             doc.elements[idx].y = max(0, min(d.base.y + d.dy, 1200))
         case .resize:
             if let fs = d.fontSize, fs != doc.elements[idx].fontSize {
@@ -330,7 +341,7 @@ struct LabelCanvas: View {
             let eff = effective(sel)
             if drag?.id == sel.id {
                 ElementsCanvas.drawOne(sel, x: eff.x, y: eff.y, fontSize: eff.fontSize,
-                                       size: eff.size, s: s, into: &ctx)
+                                       size: eff.size, s: s, printableWidth: printableWidth, into: &ctx)
             }
             let rect = elementRect(sel, s: s, x: eff.x, y: eff.y,
                                    fontSize: eff.fontSize, size: eff.size)
@@ -347,13 +358,15 @@ struct LabelCanvas: View {
     }
 
     /// Static paper layer. Equatable so SwiftUI skips re-rendering it when only
-    /// the drag preview changes.
+    /// the drag preview changes. printableWidth is part of the identity: a
+    /// paper-size change alters auto wrap widths, so the layer must repaint.
     private struct ElementsCanvas: View, Equatable {
         let elements: [LabelElement]
         let s: CGFloat
+        let printableWidth: Int
 
         static func == (a: ElementsCanvas, b: ElementsCanvas) -> Bool {
-            a.s == b.s && a.elements == b.elements
+            a.s == b.s && a.printableWidth == b.printableWidth && a.elements == b.elements
         }
 
         var body: some View {
@@ -361,15 +374,18 @@ struct LabelCanvas: View {
                 ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
                 for el in elements {
                     Self.drawOne(el, x: el.x, y: el.y, fontSize: el.fontSize,
-                                 size: el.size, s: s, into: &ctx)
+                                 size: el.size, s: s, printableWidth: printableWidth, into: &ctx)
                 }
             }
         }
 
         static func drawOne(_ el: LabelElement, x: Int, y: Int, fontSize: CGFloat,
-                            size: Int, s: CGFloat, into ctx: inout GraphicsContext) {
-            let ew = CGFloat(el.displayWidth(fontSize: fontSize, size: size, x: x)) * s
-            let eh = CGFloat(el.displayHeight(fontSize: fontSize, size: size, x: x)) * s
+                            size: Int, s: CGFloat, printableWidth: Int,
+                            into ctx: inout GraphicsContext) {
+            let ew = CGFloat(el.displayWidth(fontSize: fontSize, size: size, x: x,
+                                             printableWidth: printableWidth)) * s
+            let eh = CGFloat(el.displayHeight(fontSize: fontSize, size: size, x: x,
+                                              printableWidth: printableWidth)) * s
             let rect = CGRect(x: CGFloat(x) * s, y: CGFloat(y) * s,
                               width: ew, height: eh)
             switch el.kind {
@@ -377,7 +393,7 @@ struct LabelCanvas: View {
                 let text = Text(el.text)
                     .font(.system(size: fontSize * s, weight: el.bold ? .bold : .regular))
                     .foregroundColor(.black)
-                let tw = CGFloat(el.wrapWidth(at: x)) * s
+                let tw = CGFloat(el.wrapWidth(at: x, printableWidth: printableWidth)) * s
                 ctx.draw(text, in: CGRect(x: rect.minX, y: rect.minY, width: tw, height: rect.height))
             case .qr:
                 if let cg = LabelRenderer.qrImage(text: el.text, size: size) {
