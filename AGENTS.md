@@ -128,17 +128,55 @@ git switch -c <type>/<short-desc>
 
 分支名只描述范围，不预测大小。事后发现是小修复，不需要改名。
 
-### 3. 提交信息
+### 3. 提交信息（中英文）
 
-Conventional Commits：
+格式：
 
 ```
-<type>(<scope>): <subject>
+<type>(<scope>): <english subject>
+
+<中文正文，可选>
 ```
 
-- subject 用祈使句、小写开头、不加句号
+规则：
+
+- `type` / `scope` 必须英文，符合 Conventional Commits
+- `subject` 用英文祈使句、小写开头、不加句号，不超过 72 字符
+- `body` 用中文，说明**为什么改、影响范围、注意事项**，不要重复 subject
+- `body` 与 `subject` 之间空一行
 - 一个 commit 只做一件事
-- 合并时默认 Squash，main 上一个 PR 一个 commit
+- 合并时默认 Squash，**PR 标题同样遵守本规则**，因为 Squash 后它就是 main 上的 commit message
+- 不写“update”“fix bug”这类无信息 subject
+
+示例：
+
+```
+fix(auth): handle expired refresh token
+
+刷新令牌过期时原逻辑直接抛 500，改为返回 401 并触发前端重新登录。
+补充了对应单测，覆盖 token 过期和网络超时两种情况。
+```
+
+```
+feat(export): add CSV export for orders
+
+订单列表新增导出按钮，后端提供 /orders/export 接口。
+大订单走流式响应，避免内存峰值。
+```
+
+小改动可以只写 subject：
+
+```
+docs: fix broken link in README
+```
+
+禁止：
+
+```
+update code
+fix bug
+修改
+```
 
 ### 4. 推送与合并
 
