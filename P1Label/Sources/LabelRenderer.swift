@@ -69,53 +69,60 @@ struct LabelElement: Identifiable, Equatable, Codable {
         width = try c.decodeIfPresent(Int.self, forKey: .width) ?? 0
     }
 
-    func dotsHeight() -> Int {
+    // printableWidth defaults to the full head width (legacy behavior); callers
+    // that know the document pass the doc's actual printable width so auto wrap
+    // and clamps match what the raster will keep.
+    func dotsHeight(printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
         switch kind {
         case .qr: return size
         case .barcode: return size
         case .text:
-            return LabelRenderer.measureText(text: text, fontSize: fontSize, bold: bold, width: wrapWidth()).0
+            return LabelRenderer.measureText(text: text, fontSize: fontSize, bold: bold,
+                                             width: wrapWidth(printableWidth: printableWidth)).0
         }
     }
 
-    func dotsWidth() -> Int {
+    func dotsWidth(printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
         switch kind {
         case .qr: return size
         case .barcode: return LabelRenderer.barcodeWidth(text: text, height: size)
         case .text:
-            let w = wrapWidth()
+            let w = wrapWidth(printableWidth: printableWidth)
             return min(w, LabelRenderer.measureText(text: text, fontSize: fontSize, bold: bold, width: w).1)
         }
     }
 
-    func wrapWidth() -> Int {
-        wrapWidth(at: x)
+    func wrapWidth(printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
+        wrapWidth(at: x, printableWidth: printableWidth)
     }
 
-    func wrapWidth(at xPos: Int) -> Int {
+    func wrapWidth(at xPos: Int, printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
         if width > 0 { return width }
         // bucket auto width to 16-dot steps: x changes every frame while dragging,
         // and an exact width would defeat the CoreText measurement cache
-        let raw = max(32, LabelDocument.paperWidthDots - xPos - 8)
+        let raw = max(32, printableWidth - xPos - 8)
         return max(32, (raw / 16) * 16)
     }
 
     // Preview-aware display helpers (used by the canvas during live drags)
-    func displayWidth(fontSize: CGFloat, size: Int, x xPos: Int) -> Int {
+    func displayWidth(fontSize: CGFloat, size: Int, x xPos: Int,
+                      printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
         switch kind {
         case .qr: return size
         case .barcode: return LabelRenderer.barcodeWidth(text: text, height: size)
         case .text:
-            let w = wrapWidth(at: xPos)
+            let w = wrapWidth(at: xPos, printableWidth: printableWidth)
             return min(w, LabelRenderer.measureText(text: text, fontSize: fontSize, bold: bold, width: w).1)
         }
     }
 
-    func displayHeight(fontSize: CGFloat, size: Int, x xPos: Int) -> Int {
+    func displayHeight(fontSize: CGFloat, size: Int, x xPos: Int,
+                       printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
         switch kind {
         case .qr, .barcode: return size
         case .text:
-            return LabelRenderer.measureText(text: text, fontSize: fontSize, bold: bold, width: wrapWidth(at: xPos)).0
+            return LabelRenderer.measureText(text: text, fontSize: fontSize, bold: bold,
+                                             width: wrapWidth(at: xPos, printableWidth: printableWidth)).0
         }
     }
 }
@@ -123,6 +130,9 @@ struct LabelElement: Identifiable, Equatable, Codable {
 // MARK: - Label document (paper + elements)
 
 struct LabelDocument: Codable, Equatable {
+    /// PaperPreset the paper values came from; nil = hand-edited ("自定义").
+    /// Optional + default keeps archives saved before presets decodable.
+    var presetID: String? = nil
     var widthMM: Double = 40
     var heightMM: Double = 30
     var marginTopMM: Double = 0
@@ -178,6 +188,7 @@ enum LabelRenderer {
     /// memory row 0 = top of the label (matches raster order).
     static func renderGray(_ doc: LabelDocument) -> (pixels: [UInt8], width: Int, height: Int) {
         let (w, h) = contentSize(doc)
+        let printable = paperWidthDots(doc)
         let colorSpace = CGColorSpaceCreateDeviceGray()
         guard let ctx = CGContext(
             data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
@@ -188,8 +199,8 @@ enum LabelRenderer {
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
 
         for el in doc.elements {
-            let ew = el.dotsWidth()
-            let eh = el.dotsHeight()
+            let ew = el.dotsWidth(printableWidth: printable)
+            let eh = el.dotsHeight(printableWidth: printable)
             // element top-left (el.x, el.y) in top-down dots → CG bottom-left rect
             let rect = CGRect(x: CGFloat(el.x), y: CGFloat(h - el.y - eh),
                               width: CGFloat(ew), height: CGFloat(eh))

@@ -36,7 +36,7 @@ swiftc -O \
     -L /opt/homebrew/lib -lusb-1.0 \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/P1Label" \
-    Sources/LPAPI.swift Sources/P1USB.swift Sources/P1BLE.swift Sources/LabelRenderer.swift Sources/LabelCanvas.swift Sources/P1LabelApp.swift
+    Sources/LPAPI.swift Sources/P1USB.swift Sources/P1BLE.swift Sources/PaperSizes.swift Sources/LabelRenderer.swift Sources/LabelCanvas.swift Sources/P1LabelApp.swift
 
 # Bundle libusb so the app is self-contained
 cp /opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib "$APP/Contents/Frameworks/"

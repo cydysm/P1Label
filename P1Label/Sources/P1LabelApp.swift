@@ -77,6 +77,14 @@ final class PrintModel: ObservableObject {
            let saved = try? JSONDecoder().decode(LabelDocument.self, from: data) {
             doc = saved
         }
+        // Archives saved before presets carry no presetID; adopt one only when
+        // every calibrated value matches (the default 40×30 document is an
+        // exact hit), so the picker never mislabels hand-tuned settings.
+        if doc.presetID == nil,
+           let p = PaperPreset.matching(widthMM: doc.widthMM, heightMM: doc.heightMM,
+                                        isDieCut: isDieCut, gapLenMM: gapLenMM) {
+            doc.presetID = p.id
+        }
         ble.onDisconnect = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.connected else { return }
@@ -135,6 +143,18 @@ final class PrintModel: ObservableObject {
         guard let id = selectedElementID else { return }
         doc.elements.removeAll { $0.id == id }
         selectedElementID = nil
+    }
+
+    /// Apply a paper preset's calibrated defaults and record its id so the
+    /// picker reflects it. Hand edits to width/height afterwards demote the
+    /// document to "自定义" (presetID = nil).
+    func applyPreset(_ p: PaperPreset) {
+        doc.presetID = p.id
+        doc.widthMM = p.widthMM
+        doc.heightMM = p.heightMM
+        doc.leftPadDots = p.leftPadDots
+        isDieCut = p.isDieCut
+        gapLenMM = p.gapLenMM
     }
 
     func connect() {
@@ -280,6 +300,54 @@ struct ContentView: View {
     @StateObject private var model = PrintModel()
     @State private var previewScale: CGFloat = 2.0
 
+    // MARK: Paper size selection
+    //
+    // Picking a preset applies its calibrated defaults; editing width/height
+    // by hand demotes the document to "自定义" (presetID = nil) so the picker
+    // never claims values that were changed since.
+
+    private var paperSelection: Binding<String> {
+        Binding(
+            get: {
+                guard let id = model.doc.presetID, PaperPreset.byID(id) != nil else {
+                    return PaperPreset.customID
+                }
+                return id
+            },
+            set: { id in
+                if let p = PaperPreset.byID(id) {
+                    model.applyPreset(p)
+                } else {
+                    model.doc.presetID = nil
+                }
+            }
+        )
+    }
+
+    private var selectedPreset: PaperPreset? {
+        model.doc.presetID.flatMap { PaperPreset.byID($0) }
+    }
+
+    private var paperWidthBinding: Binding<Double> {
+        Binding(
+            get: { model.doc.widthMM },
+            set: {
+                model.doc.presetID = nil
+                model.doc.widthMM = $0
+            }
+        )
+    }
+
+    private var paperHeightBinding: Binding<Double> {
+        Binding(
+            get: { model.doc.heightMM },
+            set: {
+                model.doc.presetID = nil
+                model.doc.heightMM = $0
+            }
+        )
+    }
+
     var body: some View {
         HSplitView {
             editorPane.frame(minWidth: 300, maxWidth: 360)
@@ -314,15 +382,25 @@ struct ContentView: View {
 
                 GroupBox("纸张") {
                     VStack(alignment: .leading, spacing: 6) {
+                        Picker("尺寸", selection: paperSelection) {
+                            ForEach(PaperPreset.all) { p in
+                                Text(p.name).tag(p.id)
+                            }
+                            Text("自定义").tag(PaperPreset.customID)
+                        }
+                        if let preset = selectedPreset, !preset.hardwareVerified {
+                            Text("⚠️ 该尺寸未经真机验证，打印前请用真机校准水平偏移")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         HStack {
                             Text("宽").frame(width: 56, alignment: .leading)
-                            Stepper(value: $model.doc.widthMM, in: 20...48, step: 1) {
+                            Stepper(value: paperWidthBinding, in: 20...48, step: 1) {
                                 Text("\(model.doc.widthMM, specifier: "%.0f") mm")
                             }
                         }
                         HStack {
                             Text("高").frame(width: 56, alignment: .leading)
-                            Stepper(value: $model.doc.heightMM, in: 10...100, step: 1) {
+                            Stepper(value: paperHeightBinding, in: 10...100, step: 1) {
                                 Text("\(model.doc.heightMM, specifier: "%.0f") mm")
                             }
                         }
