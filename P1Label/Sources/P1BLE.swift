@@ -527,33 +527,6 @@ final class P1BLE: NSObject, P1Transport {
         }
         return nil
     }
-
-    /// Same as `query` with a gentler poll loop; intended for periodic status checks.
-    func queryDrain(_ cmd: UInt8, timeoutSeconds: Double = 1.0) -> [UInt8]? {
-        guard peripheral != nil, writeChar != nil else { return nil }
-        rxLock.lock()
-        rxBuffer.removeAll()
-        rxLock.unlock()
-        do { try write(LPAPI.frame(cmd)) } catch { lastError = "\(error)"; return nil }
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            if let hit = drainParsed(matching: cmd) { return hit }
-            usleep(20_000)
-        }
-        return nil
-    }
-
-    /// Device buffer size in bytes; -1 = unknown.
-    func bufferSize() -> Int {
-        guard let d = query(LPAPI.bufferSize, timeoutSeconds: 1.0), d.count >= 2 else { return -1 }
-        return Int(d[0]) << 8 | Int(d[1])
-    }
-
-    /// printable status: 0 = OK. -1 = unknown.
-    func printable() -> Int {
-        guard let d = query(LPAPI.isPrintable, timeoutSeconds: 1.0), !d.isEmpty else { return -1 }
-        return Int(d[0])
-    }
 }
 
 // MARK: - CBCentralManagerDelegate

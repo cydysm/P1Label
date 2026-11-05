@@ -37,7 +37,6 @@ protocol P1Transport: AnyObject {
     func write(_ bytes: [UInt8], timeoutMS: Int) throws
     func sendPage(_ payload: [UInt8], progress: ((Double) -> Void)?) throws
     func query(_ cmd: UInt8, timeoutSeconds: Double) -> [UInt8]?
-    func queryDrain(_ cmd: UInt8, timeoutSeconds: Double) -> [UInt8]?
 }
 
 enum USBError: Error, CustomStringConvertible {
@@ -74,15 +73,6 @@ final class P1USB: P1Transport {
     private(set) var softwareVersion: String = ""
 
     deinit { close() }
-
-    static func isPresent() -> Bool {
-        var ctx: OpaquePointer?
-        guard libusb_init(&ctx) == 0 else { return false }
-        defer { libusb_exit(ctx) }
-        let h = libusb_open_device_with_vid_pid(ctx, Self.vendorID, Self.productID)
-        if let h { libusb_close(h) }
-        return h != nil
-    }
 
     func open() throws {
         guard handle == nil else { return }
@@ -183,33 +173,6 @@ final class P1USB: P1Transport {
             _ = readInto(timeoutMS: 100)
         }
         return nil
-    }
-
-    /// Same as `query` with a gentler poll loop; intended for periodic status checks.
-    /// (Both discard stale bytes first — leftover in-flight packages are not preserved.)
-    func queryDrain(_ cmd: UInt8, timeoutSeconds: Double = 1.0) -> [UInt8]? {
-        rxBuffer.removeAll()
-        do { try write(LPAPI.frame(cmd)) } catch { lastError = "\(error)"; return nil }
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
-        while Date() < deadline {
-            let (pkgs, leftover) = LPAPI.parsePackages(rxBuffer)
-            rxBuffer = leftover
-            if let hit = pkgs.first(where: { $0.cmd == cmd }) { return hit.data }
-            if readInto(timeoutMS: 80) == 0 { usleep(20_000) }
-        }
-        return nil
-    }
-
-    /// Device buffer size in bytes; -1 = unknown.
-    func bufferSize() -> Int {
-        guard let d = query(LPAPI.bufferSize, timeoutSeconds: 1.0), d.count >= 2 else { return -1 }
-        return Int(d[0]) << 8 | Int(d[1])
-    }
-
-    /// printable status: 0 = OK. -1 = unknown.
-    func printable() -> Int {
-        guard let d = query(LPAPI.isPrintable, timeoutSeconds: 1.0), !d.isEmpty else { return -1 }
-        return Int(d[0])
     }
 
     /// Send a full page payload in small chunks.
