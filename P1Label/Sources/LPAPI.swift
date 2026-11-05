@@ -28,7 +28,10 @@ enum LPAPI {
     static let start: UInt8 = 0x1F
     static let fixedCRC: UInt8 = 0x88
 
-    // Commands
+    // Commands. All known LPAPI commands stay listed here as the protocol
+    // reference, including ones the app's validated page flow never sends
+    // (e.g. pagePrint: a page simply ends with 0x0C; the SDK's explicit print
+    // command is not needed — hardware-verified).
     static let pageStart: UInt8 = 32      // data: pageKey, 2 bytes big-endian
     static let pagePrint: UInt8 = 33
     static let pageWidth: UInt8 = 39      // data: EBV(byteWidth)

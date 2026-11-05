@@ -16,7 +16,12 @@
 - `P1Label/Sources/PaperSizes.swift` — 纸张尺寸预设目录：每尺寸一条预设（宽/高/纸型/
   间隙/`leftPadDots` 标定/`hardwareVerified`）。适配新纸张 = 在此加一条预设 → 真机标定
   `leftPadDots` → 回填该条并置 `hardwareVerified: true`，UI/渲染/拖拽上限自动跟随。
-- `tools/*.py` — 硬件校准/探测脚本（历史产物，硬编码路径可接受）。
+- `tools/*.py` — 打印机硬件工具：`print_test.py` 是 LPAPI 协议的 Python 参考实现
+  （`calib_test.py`/`offset_test.py` import 它的 `Printer` 类）；`calib_test.py` +
+  `offset_test.py` = `leftPadDots` 真机标定（PaperSizes 适配新纸张流程用）；
+  `probe.py` = 协议探测（真 CRC，逆向新命令用）。硬编码路径可接受。
+  （2026-11 删除了 drag_capture/drag_test2/drag_test3——UI 拖拽的早期人工测量脚本，
+  已被 `tools/drag_harness/` 取代，git 历史 e307820 可找回。）
 - `tools/drag_harness/` — 拖拽跟手率客观测量环境（2026-11 由外部 AI 构建，结论已验证）。
   原理：合成鼠标事件拖拽 + 逐帧截图 + 图像分析求"元素位移/光标位移"比率。
   实测基准：旧代码（手势宿主每帧移动）ratio 均值 0.530、逐帧两位置振荡；
