@@ -1,0 +1,45 @@
+paper (white interior) px: x 744..1909  y 185..1140  => 585.0 x 478.0 pt
+canvas scale: 2.0000 pt/dot (paper height 480.0 pt / 240 dots)
+paper aspect: visible 1.220, expected 1.267  [paper clipped on the right by the ScrollView]
+window base height: 711.0 pt, px/point k=2.000, px/dot=4.00
+paper top-left in window base coords: (371.0, 619.5)
+dark objects in first frame: 1
+  obj 0: bbox window (436.5,466.0)-(659.0,518.5) aspect 4.21 dark=24531
+tracked text center (window pts): (547.75, 492.25)
+
+=== drag tracking (burst) ===
+step  cursorΔ(x,y)   objΔ(x,y)   ratio     err(cursor)      err(grid)    objs  ghostpx  boxΔ(x,y)
+-------------------------------------------------------------------------------------------------
+burst_05 (  60.0, 30.0) (  40.0, 12.0) 0.667  ( 20.00, 18.00)  (20.00,18.00)    1        0  ( 40.0, 12.0)
+  ^ tracking ratio deviates from 1.0 by >15%% at |cursor dx|>40 pt
+burst_10 ( 120.0, 60.0) (  60.0, 30.0) 0.500  ( 60.00, 30.00)  (60.00,30.00)    1        0  ( 60.0, 30.0)
+burst_15 ( 180.0, 90.0) (  96.0, 48.0) 0.533  ( 84.00, 42.00)  (84.00,42.00)    1        0  ( 96.0, 48.0)
+burst_20 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+burst_after ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_00 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_01 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_02 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_03 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_04 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_05 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_06 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_07 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_08 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_09 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+tail_10 ( 240.0,120.0) ( 120.0, 60.0) 0.500  (120.00, 60.00)  (120.00,60.00)    1        0  (120.0, 60.0)
+
+tracking ratio (cursor dx > 20 pt): min 0.500 max 0.667 mean 0.512
+max |tracking error| vs cursor: 120.00 pt ; vs dot grid: 120.00 pt ; max ghost residual: 0 px
+object count per frame: 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+ghost px per frame:    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
+=== final frame (after mouseUp + 0.4 s) ===
+dark objects: 1
+final cursor delta: (240.0, 120.0) pt; observed element delta: (120.0, 60.0) pt
+commit error vs cursor: (120.00, 60.00) pt ; vs dot grid: (120.00, 60.00) pt
+final text-center paper-relative dot position: (148.38, 33.62) dots
+first text-center dot position: (88.38, 63.62); expected final: (208.38, 3.62)
+selection box centre (window pts): (671.50, 552.00); text centre: (667.75, 552.25)
+
+box-delta minus text-delta (worst): (0.00, 0.00) pt on burst_05
+median |box-text| desync: (0.00, 0.00) pt

@@ -1,0 +1,14 @@
+# Build artifacts
+P1Label/P1Label.app/
+P1Label/dist/
+*.dmg
+
+# macOS noise
+.DS_Store
+
+# Local agent/session config
+.zcode/
+
+# Swift/SPM leftovers (the build uses raw swiftc, just in case)
+.build/
+DerivedData/
