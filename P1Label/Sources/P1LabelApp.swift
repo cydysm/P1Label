@@ -363,20 +363,24 @@ struct ContentView: View {
 
     private var editorPane: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 16) {
                 statusHeader
 
                 GroupBox("添加元素") {
-                    HStack {
-                        Button("＋文字") { model.addElement(.text) }
-                        Button("＋二维码") { model.addElement(.qr) }
-                        Button("＋条码") { model.addElement(.barcode) }
-                        Spacer()
-                        Button("删除", role: .destructive) { model.deleteSelected() }
-                            .disabled(model.selectedElementID == nil)
+                    // GroupBox content defaults to center alignment; wrap in a
+                    // leading VStack so the caption lines up with the buttons.
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Button("＋文字") { model.addElement(.text) }
+                            Button("＋二维码") { model.addElement(.qr) }
+                            Button("＋条码") { model.addElement(.barcode) }
+                            Spacer()
+                            Button("删除", role: .destructive) { model.deleteSelected() }
+                                .disabled(model.selectedElementID == nil)
+                        }
+                        Text("在右侧画布上拖动元素调整位置")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                    Text("在右侧画布上拖动元素调整位置")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 if let el = model.selectedElement {
@@ -384,7 +388,7 @@ struct ContentView: View {
                 }
 
                 GroupBox("纸张") {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Picker("尺寸", selection: paperSelection) {
                             ForEach(PaperPreset.all) { p in
                                 Text(p.name).tag(p.id)
@@ -395,16 +399,14 @@ struct ContentView: View {
                             Text("⚠️ 该尺寸未经真机验证，打印前请用真机校准水平偏移")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
-                        HStack {
-                            Text("宽").frame(width: 56, alignment: .leading)
+                        paneRow("宽") {
                             Stepper(value: paperWidthBinding, in: 20...48, step: 1) {
-                                Text("\(model.doc.widthMM, specifier: "%.0f") mm")
+                                Text("\(model.doc.widthMM, specifier: "%.0f") mm").monospacedDigit()
                             }
                         }
-                        HStack {
-                            Text("高").frame(width: 56, alignment: .leading)
+                        paneRow("高") {
                             Stepper(value: paperHeightBinding, in: 10...100, step: 1) {
-                                Text("\(model.doc.heightMM, specifier: "%.0f") mm")
+                                Text("\(model.doc.heightMM, specifier: "%.0f") mm").monospacedDigit()
                             }
                         }
                         Picker("类型", selection: $model.isDieCut) {
@@ -412,52 +414,62 @@ struct ContentView: View {
                             Text("连续纸").tag(false)
                         }
                         if model.isDieCut {
-                            HStack {
-                                Text("间隙").frame(width: 56, alignment: .leading)
+                            paneRow("间隙") {
                                 Stepper(value: $model.gapLenMM, in: 1...10, step: 0.5) {
-                                    Text("\(model.gapLenMM, specifier: "%.1f") mm")
+                                    Text("\(model.gapLenMM, specifier: "%.1f") mm").monospacedDigit()
                                 }
                             }
                         }
                     }
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 4)
                 }
 
                 GroupBox("打印") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("份数").frame(width: 56, alignment: .leading)
-                            Stepper(value: $model.copies, in: 1...50) { Text("\(model.copies)") }
+                    VStack(alignment: .leading, spacing: 8) {
+                        paneRow("份数") {
+                            Stepper(value: $model.copies, in: 1...50) {
+                                Text("\(model.copies)").monospacedDigit()
+                            }
                         }
                         HStack {
-                            Text("浓度").frame(width: 56, alignment: .leading)
+                            Text("浓度").frame(width: Self.paneLabelWidth, alignment: .leading)
                             Slider(value: Binding(get: { Double(model.darkLevel) },
                                                   set: { model.darkLevel = Int($0) }), in: 1...16, step: 1)
                             Text("\(model.darkLevel)").monospacedDigit().frame(width: 24)
                         }
-                        HStack {
-                            Text("水平偏移").frame(width: 66, alignment: .leading)
+                        paneRow("水平偏移") {
                             Stepper(value: $model.doc.leftPadDots, in: 0...120, step: 1) {
                                 Text("\(model.doc.leftPadDots) 点").monospacedDigit()
                             }
                         }
-                        HStack {
-                            Text("上边距").frame(width: 56, alignment: .leading)
+                        paneRow("上边距") {
                             Stepper(value: $model.doc.marginTopMM, in: 0...10, step: 0.5) {
-                                Text("\(model.doc.marginTopMM, specifier: "%.1f") mm")
+                                Text("\(model.doc.marginTopMM, specifier: "%.1f") mm").monospacedDigit()
                             }
                         }
-                        HStack {
-                            Text("下边距").frame(width: 56, alignment: .leading)
+                        paneRow("下边距") {
                             Stepper(value: $model.doc.marginBottomMM, in: 0...10, step: 0.5) {
-                                Text("\(model.doc.marginBottomMM, specifier: "%.1f") mm")
+                                Text("\(model.doc.marginBottomMM, specifier: "%.1f") mm").monospacedDigit()
                             }
                         }
                     }
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 4)
                 }
             }
-            .padding(10)
+            .padding(14)
+        }
+    }
+
+    /// Shared grid for the pane's label/control rows: fixed label column and
+    /// the control pushed to the trailing edge, so every value + stepper
+    /// cluster lines up into one column.
+    private static let paneLabelWidth: CGFloat = 64
+
+    private func paneRow(_ label: String, @ViewBuilder control: () -> some View) -> some View {
+        HStack {
+            Text(label).frame(width: Self.paneLabelWidth, alignment: .leading)
+            Spacer()
+            control()
         }
     }
 
@@ -465,18 +477,18 @@ struct ContentView: View {
     private func elementInspector(_ binding: Binding<LabelElement>) -> some View {
         let el = binding.wrappedValue
         GroupBox("元素属性 · \(el.kind.label)") {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 if el.kind == .text {
                     TextField("内容", text: binding.text)
                         .textFieldStyle(.roundedBorder)
                     HStack {
-                        Text("字号").frame(width: 56, alignment: .leading)
+                        Text("字号").frame(width: Self.paneLabelWidth, alignment: .leading)
                         Slider(value: binding.fontSize, in: 12...72, step: 2)
                         Text("\(Int(el.fontSize))").monospacedDigit().frame(width: 24)
                         Toggle("粗体", isOn: binding.bold).toggleStyle(.checkbox)
                     }
                     HStack {
-                        Text("换行宽").frame(width: 56, alignment: .leading)
+                        Text("换行宽").frame(width: Self.paneLabelWidth, alignment: .leading)
                         Slider(value: Binding(
                             get: { Double(el.width == 0 ? 200 : el.width) },
                             set: { binding.wrappedValue.width = Int($0) }), in: 40...304, step: 4)
@@ -487,7 +499,7 @@ struct ContentView: View {
                               text: binding.text)
                         .textFieldStyle(.roundedBorder)
                     HStack {
-                        Text(el.kind == .qr ? "尺寸" : "高度").frame(width: 56, alignment: .leading)
+                        Text(el.kind == .qr ? "尺寸" : "高度").frame(width: Self.paneLabelWidth, alignment: .leading)
                         Slider(value: Binding(
                             get: { Double(el.size) },
                             set: { binding.wrappedValue.size = Int($0) }), in: 24...160, step: 4)
@@ -495,7 +507,7 @@ struct ContentView: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    Text("位置").foregroundStyle(.secondary)
+                    Text("位置").frame(width: Self.paneLabelWidth, alignment: .leading)
                     // Editable x/y for quick positioning; negative input clamps to 0.
                     TextField("x", value: Binding(
                         get: { el.x },
@@ -519,7 +531,7 @@ struct ContentView: View {
                     Stepper("↑↓", value: Binding(get: { el.y }, set: { binding.wrappedValue.y = $0 }), step: 2)
                 }
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, 4)
         }
     }
 
@@ -575,7 +587,7 @@ struct ContentView: View {
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     private func deviceLabel(_ d: P1BLE.DeviceInfo) -> String {
