@@ -69,3 +69,177 @@
 - `build.sh` 构建并签名 app；改完 Swift 代码后用它验证编译，再让用户真机确认。
 - 本项目以 GPL-3.0-or-later 开源：新增源文件照抄现有文件的 GPL 许可头；
   第三方组件/致谢记录在 `THIRD-PARTY-NOTICES.md`，勿静态链接 libusb。
+
+---
+
+## Git 工作流规则
+
+本仓库的 Git 工作流规则。所有 agent 必须遵守，除非用户在当次对话中明确覆盖。
+
+### 0. 动手前自检
+
+在执行任何 `git commit` / `git push` 之前，确认：
+
+- [ ] 当前分支不是 `main`
+- [ ] 分支名符合 `<type>/<short-desc>` 规范
+- [ ] 已从最新 `main` 切出
+- [ ] 提交信息符合 Conventional Commits
+- [ ] 没有未跟踪的敏感文件（.env、密钥、本地配置）
+
+任何一项不满足，先修正再继续。
+
+### 1. 绝对禁止
+
+- 禁止直接 `git push origin main`
+- 禁止在本地 `main` 上 commit 后 push
+- 禁止为了推小改动临时关闭或绕过 main 分支保护
+- 禁止 `git push --force` / `--force-with-lease` 到 `main`
+- 禁止合并后保留源分支（本地和远程都要删）
+- 禁止把不相关改动混进同一个 PR
+- 禁止在未跑通 CI/测试的情况下合并
+
+遇到"推不上去"，正确反应是**转到新分支走 PR**，不是关保护。
+
+### 2. 开始任何改动
+
+```bash
+git switch main
+git pull --ff-only
+git switch -c <type>/<short-desc>
+```
+
+分支类型：
+
+| type | 用途 |
+|------|------|
+| `feat` | 新功能 |
+| `fix` | 修 bug |
+| `docs` | 文档 |
+| `refactor` | 重构，不改行为 |
+| `test` | 测试 |
+| `chore` | 构建、依赖、杂项 |
+| `perf` | 性能 |
+
+命名示例：`fix/auth-timeout`、`docs/readme-typo`、`feat/export-csv`。
+
+分支名只描述范围，不预测大小。事后发现是小修复，不需要改名。
+
+### 3. 提交信息
+
+Conventional Commits：
+
+```
+<type>(<scope>): <subject>
+```
+
+- subject 用祈使句、小写开头、不加句号
+- 一个 commit 只做一件事
+- 合并时默认 Squash，main 上一个 PR 一个 commit
+
+### 4. 推送与合并
+
+```bash
+git push -u origin <branch>
+```
+
+然后在 GitHub/GitLab 开 PR：
+
+1. 标题清晰，关联 issue（如有）
+2. 等 CI 通过
+3. **Squash merge**
+4. 合并后删除远程分支（平台设置自动删）
+5. 本地清理：
+
+```bash
+git switch main
+git pull --ff-only
+git branch -D <branch>   # squash 后 -d 会报 not fully merged，确认 PR 已合并后用 -D
+```
+
+### 5. 已经在本地 main 上改了怎么办
+
+**未 commit：**
+
+```bash
+git switch -c <type>/<short-desc>
+# 改动会跟着带到新分支
+```
+
+**已 commit：**
+
+```bash
+git branch <type>/<short-desc>
+git reset --hard origin/main
+git push -u origin <type>/<short-desc>
+```
+
+**已经本地 merge 了一堆：**
+
+```bash
+git branch <type>/<short-desc>
+git reset --hard origin/main
+git push -u origin <type>/<short-desc>
+```
+
+然后开 PR。混了不相关改动就拆分支；个人项目可接受一个批次 PR，但标题写清楚。
+
+执行 `reset --hard` 前必须确认没有未提交改动，先 `git status`。
+
+### 6. 分支清理
+
+已合并分支立即删。定期执行：
+
+```bash
+git fetch --prune
+git branch --merged main
+git branch -d <branch>          # 普通 merge 用 -d
+git branch -D <branch>          # squash merge 后用 -D
+git push origin --delete <branch>
+```
+
+判断可删：
+
+- 已合并进 main
+- PR 已关闭且不继续
+- 超过 30 天无活动
+- 实验分支，结论已转 issue/PR
+
+长期保留只允许：`main`、`release/*`、`gh-pages` 等明确用途分支。
+
+### 7. 分支太多
+
+- 同主题小修合并到一个分支/PR，不要一个 typo 一个分支
+- 文档/格式类改动攒成 `docs/cleanup` 批次
+- 不做的分支：先在 issue 里留结论，再删
+- 远程只保留"有打开 PR"的分支
+- 每月清理一次
+
+不要为了整理历史去 rebase 一堆旧分支，个人项目收益低。
+
+### 8. 合并策略
+
+- 默认 **Squash merge**
+- main 历史保持线性，一个 PR 一个 commit
+- 大功能要保留提交粒度时，可在 PR 中说明改用 Rebase merge，但需用户确认
+- 不使用 Merge commit，除非用户明确要求
+
+### 9. 紧急例外
+
+唯一允许绕过 PR 的情况：线上事故且无法等待 CI。
+
+流程：
+
+1. 先告知用户，说明为什么不能走 PR
+2. 建 `hotfix/<desc>` 分支
+3. 最小改动 + 最快验证
+4. 推分支，开 PR，标记 urgent
+5. 合并后补 issue 记录
+6. 不允许直接推 main，不允许关保护
+
+### 10. 给 agent 的行为约束
+
+- 不要自作主张改分支策略
+- 不要为了"省事"直接操作 main
+- 执行破坏性命令（`reset --hard`、`branch -D`、`push --delete`）前先 `git status` 并说明影响
+- 不确定时先问用户，不要猜
+- 每次完成任务后报告：分支名、commit、PR 链接、是否已清理
