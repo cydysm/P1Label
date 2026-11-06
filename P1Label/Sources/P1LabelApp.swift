@@ -29,8 +29,9 @@ struct P1LabelApp: App {
     var body: some Scene {
         WindowGroup("P1 标签打印") {
             ContentView()
-                .frame(minWidth: 980, minHeight: 640)
+                .frame(minWidth: 1080, minHeight: 700)
         }
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
     }
 }
@@ -85,6 +86,10 @@ final class PrintModel: ObservableObject {
                                         isDieCut: isDieCut, gapLenMM: gapLenMM) {
             doc.presetID = p.id
         }
+        // One-time migration: pull saved elements back inside the paper.
+        // Archives saved with the old drag clamp may hold off-paper elements
+        // that rendered invisible yet still counted ("空画布却有 N 个元素").
+        clampElementsIntoPaper()
         ble.onDisconnect = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.connected else { return }
@@ -92,6 +97,19 @@ final class PrintModel: ObservableObject {
                 self.status = "蓝牙连接已断开"
                 self.deviceSummary = ""
             }
+        }
+    }
+
+    /// Clamp every element fully inside the current paper (see LabelCanvas.commit).
+    private func clampElementsIntoPaper() {
+        let printable = LabelRenderer.paperWidthDots(doc)
+        let (_, hDots) = LabelRenderer.contentSize(doc)
+        for i in doc.elements.indices {
+            let el = doc.elements[i]
+            let maxX = max(0, printable - el.dotsWidth(printableWidth: printable))
+            let maxY = max(0, hDots - el.dotsHeight(printableWidth: printable))
+            doc.elements[i].x = max(0, min(el.x, maxX))
+            doc.elements[i].y = max(0, min(el.y, maxY))
         }
     }
 
@@ -138,6 +156,7 @@ final class PrintModel: ObservableObject {
         doc.elements.append(el)
         selectedElementID = el.id
     }
+
 
     /// Apply a paper preset's calibrated defaults and record its id so the
     /// picker reflects it. Hand edits to width/height afterwards demote the
@@ -199,7 +218,7 @@ final class PrintModel: ObservableObject {
             status = "未发现蓝牙打印机"
             if mode == .ble { scanForPrinters() }
         default:
-            status = "连接失败：\(error.localizedDescription)"
+            status = "连接失败：\(String(describing: error))"
         }
     }
 
@@ -281,308 +300,9 @@ final class PrintModel: ObservableObject {
             } catch {
                 await MainActor.run {
                     self.printing = false
-                    self.status = "打印失败：\(error.localizedDescription)"
+                    self.status = "打印失败：\(String(describing: error))"
                 }
             }
         }
-    }
-}
-
-// MARK: - Main view
-
-struct ContentView: View {
-    @StateObject private var model = PrintModel()
-    @State private var previewScale: CGFloat = 2.0
-
-    // MARK: Paper size selection
-    //
-    // Picking a preset applies its calibrated defaults; editing width/height
-    // by hand demotes the document to "自定义" (presetID = nil) so the picker
-    // never claims values that were changed since.
-
-    private var paperSelection: Binding<String> {
-        Binding(
-            get: {
-                guard let id = model.doc.presetID, PaperPreset.byID(id) != nil else {
-                    return PaperPreset.customID
-                }
-                return id
-            },
-            set: { id in
-                if let p = PaperPreset.byID(id) {
-                    model.applyPreset(p)
-                } else {
-                    model.doc.presetID = nil
-                }
-            }
-        )
-    }
-
-    private var selectedPreset: PaperPreset? {
-        model.doc.presetID.flatMap { PaperPreset.byID($0) }
-    }
-
-    private var paperWidthBinding: Binding<Double> {
-        Binding(
-            get: { model.doc.widthMM },
-            set: {
-                model.doc.presetID = nil
-                model.doc.widthMM = $0
-            }
-        )
-    }
-
-    private var paperHeightBinding: Binding<Double> {
-        Binding(
-            get: { model.doc.heightMM },
-            set: {
-                model.doc.presetID = nil
-                model.doc.heightMM = $0
-            }
-        )
-    }
-
-    var body: some View {
-        HSplitView {
-            editorPane.frame(minWidth: 300, maxWidth: 360)
-            canvasPane.frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .onAppear { model.connect() }
-    }
-
-    // MARK: Left column: tools + properties + print settings
-
-    private var editorPane: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                statusHeader
-
-                GroupBox("添加元素") {
-                    HStack {
-                        Button("＋文字") { model.addElement(.text) }
-                        Button("＋二维码") { model.addElement(.qr) }
-                        Button("＋条码") { model.addElement(.barcode) }
-                    }
-                    Text("在右侧画布上拖动元素调整位置")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-
-                if let el = model.selectedElement {
-                    elementInspector(el)
-                }
-
-                GroupBox("纸张") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Picker("尺寸", selection: paperSelection) {
-                            ForEach(PaperPreset.all) { p in
-                                Text(p.name).tag(p.id)
-                            }
-                            Text("自定义").tag(PaperPreset.customID)
-                        }
-                        if let preset = selectedPreset, !preset.hardwareVerified {
-                            Text("⚠️ 该尺寸未经真机验证，打印前请用真机校准水平偏移")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        HStack {
-                            Text("宽").frame(width: 56, alignment: .leading)
-                            Stepper(value: paperWidthBinding, in: 20...48, step: 1) {
-                                Text("\(model.doc.widthMM, specifier: "%.0f") mm")
-                            }
-                        }
-                        HStack {
-                            Text("高").frame(width: 56, alignment: .leading)
-                            Stepper(value: paperHeightBinding, in: 10...100, step: 1) {
-                                Text("\(model.doc.heightMM, specifier: "%.0f") mm")
-                            }
-                        }
-                        Picker("类型", selection: $model.isDieCut) {
-                            Text("模切标签(有间隙)").tag(true)
-                            Text("连续纸").tag(false)
-                        }
-                        if model.isDieCut {
-                            HStack {
-                                Text("间隙").frame(width: 56, alignment: .leading)
-                                Stepper(value: $model.gapLenMM, in: 1...10, step: 0.5) {
-                                    Text("\(model.gapLenMM, specifier: "%.1f") mm")
-                                }
-                            }
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-
-                GroupBox("打印") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("份数").frame(width: 56, alignment: .leading)
-                            Stepper(value: $model.copies, in: 1...50) { Text("\(model.copies)") }
-                        }
-                        HStack {
-                            Text("浓度").frame(width: 56, alignment: .leading)
-                            Slider(value: Binding(get: { Double(model.darkLevel) },
-                                                  set: { model.darkLevel = Int($0) }), in: 1...16, step: 1)
-                            Text("\(model.darkLevel)").monospacedDigit().frame(width: 24)
-                        }
-                        HStack {
-                            Text("水平偏移").frame(width: 66, alignment: .leading)
-                            Stepper(value: $model.doc.leftPadDots, in: 0...120, step: 1) {
-                                Text("\(model.doc.leftPadDots) 点").monospacedDigit()
-                            }
-                        }
-                        HStack {
-                            Text("上边距").frame(width: 56, alignment: .leading)
-                            Stepper(value: $model.doc.marginTopMM, in: 0...10, step: 0.5) {
-                                Text("\(model.doc.marginTopMM, specifier: "%.1f") mm")
-                            }
-                        }
-                        HStack {
-                            Text("下边距").frame(width: 56, alignment: .leading)
-                            Stepper(value: $model.doc.marginBottomMM, in: 0...10, step: 0.5) {
-                                Text("\(model.doc.marginBottomMM, specifier: "%.1f") mm")
-                            }
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-            .padding(10)
-        }
-    }
-
-    @ViewBuilder
-    private func elementInspector(_ binding: Binding<LabelElement>) -> some View {
-        let el = binding.wrappedValue
-        GroupBox("元素属性 · \(el.kind.label)") {
-            VStack(alignment: .leading, spacing: 6) {
-                if el.kind == .text {
-                    TextField("内容", text: binding.text)
-                        .textFieldStyle(.roundedBorder)
-                    HStack {
-                        Text("字号").frame(width: 56, alignment: .leading)
-                        Slider(value: binding.fontSize, in: 12...72, step: 2)
-                        Text("\(Int(el.fontSize))").monospacedDigit().frame(width: 24)
-                        Toggle("粗体", isOn: binding.bold).toggleStyle(.checkbox)
-                    }
-                    HStack {
-                        Text("换行宽").frame(width: 56, alignment: .leading)
-                        Slider(value: Binding(
-                            get: { Double(el.width == 0 ? 200 : el.width) },
-                            set: { binding.wrappedValue.width = Int($0) }), in: 40...304, step: 4)
-                        Text(el.width == 0 ? "自动" : "\(el.width)").monospacedDigit().frame(width: 40)
-                    }
-                } else {
-                    TextField(el.kind == .qr ? "二维码内容" : "条码内容(字母/数字)",
-                              text: binding.text)
-                        .textFieldStyle(.roundedBorder)
-                    HStack {
-                        Text(el.kind == .qr ? "尺寸" : "高度").frame(width: 56, alignment: .leading)
-                        Slider(value: Binding(
-                            get: { Double(el.size) },
-                            set: { binding.wrappedValue.size = Int($0) }), in: 24...160, step: 4)
-                        Text("\(el.size)").monospacedDigit().frame(width: 24)
-                    }
-                }
-                HStack(spacing: 8) {
-                    Text("位置").foregroundStyle(.secondary)
-                    // Editable x/y for quick positioning; negative input clamps to 0.
-                    TextField("x", value: Binding(
-                        get: { el.x },
-                        set: { binding.wrappedValue.x = max(0, $0) }
-                    ), format: .number.grouping(.never))
-                        .textFieldStyle(.roundedBorder)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 46)
-                        .monospacedDigit()
-                    Text(",").foregroundStyle(.secondary)
-                    TextField("y", value: Binding(
-                        get: { el.y },
-                        set: { binding.wrappedValue.y = max(0, $0) }
-                    ), format: .number.grouping(.never))
-                        .textFieldStyle(.roundedBorder)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 46)
-                        .monospacedDigit()
-                    Spacer()
-                    Stepper("←→", value: Binding(get: { el.x }, set: { binding.wrappedValue.x = $0 }), step: 2)
-                    Stepper("↑↓", value: Binding(get: { el.y }, set: { binding.wrappedValue.y = $0 }), step: 2)
-                }
-            }
-            .padding(.vertical, 2)
-        }
-    }
-
-    private var statusHeader: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(model.connected ? Color.green : Color.red)
-                .frame(width: 9, height: 9)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.status).font(.callout)
-                if !model.deviceSummary.isEmpty {
-                    Text(model.deviceSummary).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            if model.mode == .ble && !model.connected && !model.bleDevices.isEmpty {
-                Menu("选择打印机") {
-                    ForEach(model.bleDevices) { d in
-                        Button(deviceLabel(d)) { model.selectBLEDevice(d) }
-                    }
-                }
-            }
-            if !model.connected {
-                Button(model.mode == .ble && !model.hasSavedBLEDevice ? "扫描" : "重连") {
-                    if model.mode == .ble && !model.hasSavedBLEDevice {
-                        model.scanForPrinters()
-                    } else {
-                        model.connect()
-                    }
-                }
-                .disabled(model.connecting)
-            }
-            Picker("连接方式", selection: Binding(get: { model.mode }, set: { model.switchMode($0) })) {
-                Text("USB").tag(TransportMode.usb)
-                Text("蓝牙").tag(TransportMode.ble)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 118)
-            .disabled(model.printing || model.connecting)
-        }
-        .padding(.vertical, 2)
-    }
-
-    private func deviceLabel(_ d: P1BLE.DeviceInfo) -> String {
-        let name = d.name.isEmpty ? "未命名设备" : d.name
-        return d.matchesPrinter ? "\(name) · 打印机" : name
-    }
-
-    // MARK: Right: interactive canvas + print button
-
-    private var canvasPane: some View {
-        VStack(spacing: 8) {
-            LabelCanvas(doc: $model.doc, selectedID: $model.selectedElementID,
-                        scale: $previewScale)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if model.printing {
-                ProgressView(value: model.progress).frame(width: 240)
-            }
-            HStack {
-                Text("预览缩放").font(.caption).foregroundStyle(.secondary)
-                Slider(value: $previewScale, in: 0.5...6, step: 0.25)
-                    .frame(width: 140)
-                Button("适应窗口") { previewScale = 2.0 }
-                Spacer()
-                Button {
-                    model.print_()
-                } label: {
-                    Text(model.printing ? "发送中…" : "打 印")
-                        .frame(width: 120, height: 26)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!model.connected || model.printing)
-            }
-        }
-        .padding(10)
     }
 }

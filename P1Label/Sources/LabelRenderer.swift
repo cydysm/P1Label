@@ -316,33 +316,41 @@ enum LabelRenderer {
 
     // MARK: CoreImage generators
 
-    static func qrImage(text: String, size: Int) -> CGImage? {
+    /// `pixelScale` > 1 renders a hi-res source for the canvas preview (the
+    /// 1× default keeps the print raster byte-identical), and converts the
+    /// output to black-on-clear so elements stack without an opaque white box.
+    static func qrImage(text: String, size: Int, pixelScale: CGFloat = 1) -> CGImage? {
         guard !text.isEmpty else { return nil }
         cacheLock.lock()
-        if let hit = qrImageCache["\(text)|\(size)"] { cacheLock.unlock(); return hit }
+        if let hit = qrImageCache["\(text)|\(size)|\(pixelScale)"] { cacheLock.unlock(); return hit }
         cacheLock.unlock()
         guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
         filter.setValue(Data(text.utf8), forKey: "inputMessage")
         filter.setValue("M", forKey: "inputCorrectionLevel")
-        guard let out = filter.outputImage, let img = ciToCG(out, size: CGSize(width: size, height: size)) else {
+        guard let out = filter.outputImage,
+              var img = ciToCG(out, size: CGSize(width: size, height: size), pixelScale: pixelScale) else {
             return nil
         }
-        cacheLock.lock(); qrImageCache["\(text)|\(size)"] = img; trimCaches(); cacheLock.unlock()
+        if pixelScale > 1 { img = Self.blackOnClear(img) ?? img }
+        cacheLock.lock(); qrImageCache["\(text)|\(size)|\(pixelScale)"] = img; trimCaches(); cacheLock.unlock()
         return img
     }
 
-    static func barcodeImage(text: String, height: Int) -> CGImage? {
+    /// See qrImage for the pixelScale contract.
+    static func barcodeImage(text: String, height: Int, pixelScale: CGFloat = 1) -> CGImage? {
         guard !text.isEmpty else { return nil }
         cacheLock.lock()
-        if let hit = barcodeImageCache["\(text)|\(height)"] { cacheLock.unlock(); return hit }
+        if let hit = barcodeImageCache["\(text)|\(height)|\(pixelScale)"] { cacheLock.unlock(); return hit }
         cacheLock.unlock()
         guard let filter = CIFilter(name: "CICode128BarcodeGenerator") else { return nil }
         filter.setValue(Data(text.utf8), forKey: "inputMessage")
         filter.setValue(2.0, forKey: "inputQuietSpace")
-        guard let out = filter.outputImage, let img = ciToCG(out, size: CGSize(width: 800, height: height)) else {
+        guard let out = filter.outputImage,
+              var img = ciToCG(out, size: CGSize(width: 800, height: height), pixelScale: pixelScale) else {
             return nil
         }
-        cacheLock.lock(); barcodeImageCache["\(text)|\(height)"] = img; trimCaches(); cacheLock.unlock()
+        if pixelScale > 1 { img = Self.blackOnClear(img) ?? img }
+        cacheLock.lock(); barcodeImageCache["\(text)|\(height)|\(pixelScale)"] = img; trimCaches(); cacheLock.unlock()
         return img
     }
 
@@ -354,8 +362,37 @@ enum LabelRenderer {
     /// CIContext creation is expensive — share one (it is thread-safe for rendering).
     private static let ciContext = CIContext()
 
-    private static func ciToCG(_ ci: CIImage, size: CGSize) -> CGImage? {
-        let scale = min(size.width / ci.extent.width, size.height / ci.extent.height)
+    /// Convert a hi-res black-on-white code image to black-on-clear: alpha =
+    /// 255 − gray, RGB = 0. Done in CoreGraphics — CIColorMatrix poisons the
+    /// render (its extent goes infinite and createCGImage returns nil).
+    private static func blackOnClear(_ gray: CGImage) -> CGImage? {
+        let w = gray.width, h = gray.height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: w, space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+        ctx.draw(gray, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let base = ctx.data else { return nil }
+        let g = base.assumingMemoryBound(to: UInt8.self)
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        for y in 0..<h {
+            for x in 0..<w {
+                let o = (y * w + x) * 4
+                rgba[o + 3] = 255 - g[y * w + x]   // dark → opaque black
+            }
+        }
+        return rgba.withUnsafeBytes { raw in
+            guard let prov = CGDataProvider(data: Data(bytes: raw.baseAddress!, count: w * h * 4) as CFData)
+            else { return nil }
+            return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32,
+                           bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                           bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                           provider: prov, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        }
+    }
+
+    private static func ciToCG(_ ci: CIImage, size: CGSize, pixelScale: CGFloat = 1) -> CGImage? {
+        let target = CGSize(width: size.width * pixelScale, height: size.height * pixelScale)
+        let scale = min(target.width / ci.extent.width, target.height / ci.extent.height)
         if !scale.isFinite || scale <= 0 { return nil }
         let scaled = ci.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         let snap = CGRect(x: 0, y: 0, width: scaled.extent.width.rounded(), height: scaled.extent.height.rounded())

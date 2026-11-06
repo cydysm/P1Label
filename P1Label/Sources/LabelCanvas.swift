@@ -92,7 +92,8 @@ struct LabelCanvas: View {
                     ElementsCanvas(elements: staticElements, s: s, printableWidth: printableWidth)
                         .equatable()
                         .frame(width: paperW, height: paperH)
-                        .border(Color.gray.opacity(0.4), width: 1)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
 
                     // Per-frame layer: dragged element at its live position plus
                     // the selection box for the selected element.
@@ -119,7 +120,7 @@ struct LabelCanvas: View {
                 .frame(width: paperW + 40, height: paperH + 40, alignment: .topLeading)
                 .frame(minWidth: geo.size.width, minHeight: geo.size.height)
             }
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(Color(red: 0xDC / 255, green: 0xE0 / 255, blue: 0xE9 / 255))
             .gesture(
                 MagnificationGesture()
                     .onChanged { v in
@@ -333,8 +334,14 @@ struct LabelCanvas: View {
         switch d.mode {
         case .move:
             guard d.dx != 0 || d.dy != 0 else { return }
-            doc.elements[idx].x = max(0, min(d.base.x + d.dx, printableWidth))
-            doc.elements[idx].y = max(0, min(d.base.y + d.dy, 1200))
+            // Clamp fully inside the paper. The old y clamp (1200) predated
+            // paper presets and let elements be dragged off-paper where they
+            // turned invisible but still counted in the document.
+            let (_, hDots) = LabelRenderer.contentSize(doc)
+            let maxX = max(0, printableWidth - d.base.dotsWidth(printableWidth: printableWidth))
+            let maxY = max(0, hDots - d.base.dotsHeight(printableWidth: printableWidth))
+            doc.elements[idx].x = max(0, min(d.base.x + d.dx, maxX))
+            doc.elements[idx].y = max(0, min(d.base.y + d.dy, maxY))
         case .resize:
             if let fs = d.fontSize, fs != doc.elements[idx].fontSize {
                 doc.elements[idx].fontSize = fs
@@ -472,11 +479,11 @@ struct LabelCanvas: View {
                 let tw = CGFloat(el.wrapWidth(at: x, printableWidth: printableWidth)) * s
                 ctx.draw(text, in: CGRect(x: rect.minX, y: rect.minY, width: tw, height: rect.height))
             case .qr:
-                if let cg = LabelRenderer.qrImage(text: el.text, size: size) {
+                if let cg = LabelRenderer.qrImage(text: el.text, size: size, pixelScale: 4) {
                     ctx.draw(Image(cg, scale: 1, orientation: .up, label: Text("二维码")), in: rect)
                 }
             case .barcode:
-                if let cg = LabelRenderer.barcodeImage(text: el.text, height: size) {
+                if let cg = LabelRenderer.barcodeImage(text: el.text, height: size, pixelScale: 4) {
                     ctx.draw(Image(cg, scale: 1, orientation: .up, label: Text("条码")), in: rect)
                 }
             }

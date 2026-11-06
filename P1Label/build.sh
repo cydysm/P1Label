@@ -24,6 +24,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleVersion</key>           <string>1</string>
     <key>LSMinimumSystemVersion</key>    <string>12.0</string>
     <key>NSHighResolutionCapable</key>   <true/>
+    <key>NSRequiresAquaSystemAppearance</key> <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>NSBluetoothAlwaysUsageDescription</key><string>连接蓝牙标签打印机进行无线打印</string>
 </dict>
@@ -37,7 +38,7 @@ swiftc -O \
     -L /opt/homebrew/lib -lusb-1.0 \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
     -o "$APP/Contents/MacOS/P1Label" \
-    Sources/LPAPI.swift Sources/P1USB.swift Sources/P1BLE.swift Sources/PaperSizes.swift Sources/LabelRenderer.swift Sources/LabelCanvas.swift Sources/P1LabelApp.swift
+    Sources/LPAPI.swift Sources/P1USB.swift Sources/P1BLE.swift Sources/PaperSizes.swift Sources/LabelRenderer.swift Sources/LabelCanvas.swift Sources/MainWindow.swift Sources/P1LabelApp.swift
 
 # Bundle libusb so the app is self-contained
 cp /opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib "$APP/Contents/Frameworks/"
