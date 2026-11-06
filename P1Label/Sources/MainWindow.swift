@@ -90,14 +90,73 @@ private func rowLabel(_ text: String, width: CGFloat) -> some View {
 /// moves the window instead of dragging elements (verified on hardware).
 /// Fix: keep the flag off and forward mouse-downs from the title bar only to
 /// NSWindow.performDrag, which runs the real window-drag tracking loop.
+///
+/// The same view also hides the system traffic lights: macOS pins them at
+/// y≈14 while the design centers them in the 52pt bar (y=26) at x=20/39/58.
+/// Repositioning the private titlebar views directly proved fragile (buttons
+/// ghosted), so ContentView draws replacements (TrafficLights) instead.
 private struct TitleBarDragView: NSViewRepresentable {
     final class DragView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                window.standardWindowButton(kind)?.isHidden = true
+            }
+        }
         override func mouseDown(with event: NSEvent) {
             window?.performDrag(with: event)
         }
     }
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// Custom traffic lights at the design's coordinates, wired to the standard
+/// window actions. Click target is 19×26 per light so they stay easy to hit.
+private struct TrafficLights: View {
+    @State private var hovered: Int?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            light(0, Color(red: 1.00, green: 0.37, blue: 0.34))   // #FF5F57
+            light(1, Color(red: 1.00, green: 0.74, blue: 0.18))   // #FEBC2E
+            light(2, Color(red: 0.16, green: 0.78, blue: 0.25))   // #28C840
+        }
+    }
+
+    private func light(_ idx: Int, _ color: Color) -> some View {
+        Button {
+            guard let w = NSApp.keyWindow else { return }
+            switch idx {
+            case 0: w.performClose(nil)
+            case 1: w.performMiniaturize(nil)
+            default: w.performZoom(nil)
+            }
+        } label: {
+            Circle()
+                .fill(color)
+                .frame(width: 11, height: 11)
+                .overlay {
+                    glyph(idx)
+                        .foregroundStyle(.black.opacity(0.55))
+                        .opacity(hovered == idx ? 1 : 0)
+                }
+                .frame(width: 19, height: 26)   // 11pt circle + native-ish hit area
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { h in hovered = h ? idx : (hovered == idx ? nil : hovered) }
+    }
+
+    @ViewBuilder
+    private func glyph(_ idx: Int) -> some View {
+        switch idx {
+        case 0: Image(systemName: "xmark").font(.system(size: 6, weight: .bold))
+        case 1: Image(systemName: "minus").font(.system(size: 7, weight: .bold))
+        default: Image(systemName: "plus").font(.system(size: 7, weight: .bold))
+        }
+    }
 }
 
 // MARK: - Custom controls
@@ -361,15 +420,16 @@ struct ContentView: View {
     // MARK: Title bar
 
     private var titleBar: some View {
-        HStack {
+        HStack(spacing: 0) {
+            // Custom lights: design x=20/39/58 (left edges), centered at y=26.
+            TrafficLights()
+                .padding(.leading, 16)
             Text("P1 标签打印")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Design.textPrimary)
+                .padding(.leading, 12)   // lights block ends at 69, +16 → 85
             Spacer()
         }
-        // Design: 52pt row, lights block then 16pt gap then the 14pt title —
-        // the real traffic lights end at ~x58, so 58+16 = 74.
-        .padding(.leading, 74)
         .frame(height: 52)
         .background(Design.sidebarBg)
         .background(TitleBarDragView())
