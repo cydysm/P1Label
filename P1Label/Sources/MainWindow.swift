@@ -868,7 +868,10 @@ struct ContentView: View {
             }
             .onAppear { previewScale = fitScale(canvasViewport(geo)) }
         }
-        .padding(.horizontal, 12)
+        // Design: pane 928 = 16 top + 48 info bar + 792 canvas + 56 status
+        // bar + 16 bottom — the info bar's top edge aligns with the device
+        // card's top edge (both 16pt below the title bar).
+        .padding(EdgeInsets(top: 16, leading: 12, bottom: 16, trailing: 12))
         .background(Design.sidebarBg)
     }
 
