@@ -218,7 +218,7 @@ final class PrintModel: ObservableObject {
             status = "未发现蓝牙打印机"
             if mode == .ble { scanForPrinters() }
         default:
-            status = "连接失败：\(error.localizedDescription)"
+            status = "连接失败：\(String(describing: error))"
         }
     }
 
@@ -300,7 +300,7 @@ final class PrintModel: ObservableObject {
             } catch {
                 await MainActor.run {
                     self.printing = false
-                    self.status = "打印失败：\(error.localizedDescription)"
+                    self.status = "打印失败：\(String(describing: error))"
                 }
             }
         }
