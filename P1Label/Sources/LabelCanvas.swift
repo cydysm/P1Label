@@ -334,8 +334,14 @@ struct LabelCanvas: View {
         switch d.mode {
         case .move:
             guard d.dx != 0 || d.dy != 0 else { return }
-            doc.elements[idx].x = max(0, min(d.base.x + d.dx, printableWidth))
-            doc.elements[idx].y = max(0, min(d.base.y + d.dy, 1200))
+            // Clamp fully inside the paper. The old y clamp (1200) predated
+            // paper presets and let elements be dragged off-paper where they
+            // turned invisible but still counted in the document.
+            let (_, hDots) = LabelRenderer.contentSize(doc)
+            let maxX = max(0, printableWidth - d.base.dotsWidth(printableWidth: printableWidth))
+            let maxY = max(0, hDots - d.base.dotsHeight(printableWidth: printableWidth))
+            doc.elements[idx].x = max(0, min(d.base.x + d.dx, maxX))
+            doc.elements[idx].y = max(0, min(d.base.y + d.dy, maxY))
         case .resize:
             if let fs = d.fontSize, fs != doc.elements[idx].fontSize {
                 doc.elements[idx].fontSize = fs

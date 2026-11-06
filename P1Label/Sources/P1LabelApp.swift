@@ -86,6 +86,10 @@ final class PrintModel: ObservableObject {
                                         isDieCut: isDieCut, gapLenMM: gapLenMM) {
             doc.presetID = p.id
         }
+        // One-time migration: pull saved elements back inside the paper.
+        // Archives saved with the old drag clamp may hold off-paper elements
+        // that rendered invisible yet still counted ("空画布却有 N 个元素").
+        clampElementsIntoPaper()
         ble.onDisconnect = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.connected else { return }
@@ -93,6 +97,19 @@ final class PrintModel: ObservableObject {
                 self.status = "蓝牙连接已断开"
                 self.deviceSummary = ""
             }
+        }
+    }
+
+    /// Clamp every element fully inside the current paper (see LabelCanvas.commit).
+    private func clampElementsIntoPaper() {
+        let printable = LabelRenderer.paperWidthDots(doc)
+        let (_, hDots) = LabelRenderer.contentSize(doc)
+        for i in doc.elements.indices {
+            let el = doc.elements[i]
+            let maxX = max(0, printable - el.dotsWidth(printableWidth: printable))
+            let maxY = max(0, hDots - el.dotsHeight(printableWidth: printable))
+            doc.elements[i].x = max(0, min(el.x, maxX))
+            doc.elements[i].y = max(0, min(el.y, maxY))
         }
     }
 
