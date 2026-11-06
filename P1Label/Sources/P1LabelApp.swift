@@ -139,12 +139,6 @@ final class PrintModel: ObservableObject {
         selectedElementID = el.id
     }
 
-    func deleteSelected() {
-        guard let id = selectedElementID else { return }
-        doc.elements.removeAll { $0.id == id }
-        selectedElementID = nil
-    }
-
     /// Apply a paper preset's calibrated defaults and record its id so the
     /// picker reflects it. Hand edits to width/height afterwards demote the
     /// document to "自定义" (presetID = nil).
@@ -368,9 +362,6 @@ struct ContentView: View {
                         Button("＋文字") { model.addElement(.text) }
                         Button("＋二维码") { model.addElement(.qr) }
                         Button("＋条码") { model.addElement(.barcode) }
-                        Spacer()
-                        Button("删除", role: .destructive) { model.deleteSelected() }
-                            .disabled(model.selectedElementID == nil)
                     }
                     Text("在右侧画布上拖动元素调整位置")
                         .font(.caption).foregroundStyle(.secondary)
