@@ -790,8 +790,7 @@ struct ContentView: View {
         // 976pt column inside the 1000pt pane — a ~12pt strip of pane
         // background shows on each side; the gray canvas field has rounded
         // corners and meets the bars with no hairlines.
-        GeometryReader { geo in
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 HStack(spacing: 12) {
                     Text("标签预览")
                         .font(.system(size: 13, weight: .semibold))
@@ -831,7 +830,7 @@ struct ContentView: View {
                             range: 0.5...6)
                         .frame(width: 120)
                     Button {
-                        previewScale = fitScale(canvasViewport(geo))
+                        previewScale = 2.0
                     } label: {
                         Text("适应窗口")
                             .font(.system(size: 11))
@@ -866,27 +865,10 @@ struct ContentView: View {
                 .frame(height: 56)
                 .background(.white)
             }
-            .onAppear { previewScale = fitScale(canvasViewport(geo)) }
-        }
         // Design: pane 928 = 16 top + 48 info bar + 792 canvas + 56 status
         // bar + 16 bottom — the info bar's top edge aligns with the device
         // card's top edge (both 16pt below the title bar).
         .padding(EdgeInsets(top: 16, leading: 12, bottom: 16, trailing: 12))
         .background(Design.sidebarBg)
-    }
-
-    /// Canvas scroll-viewport size: pane minus the two bars, the 12pt side
-    /// insets and the 40pt paper margin inside LabelCanvas's scroll content.
-    private func canvasViewport(_ geo: GeometryProxy) -> CGSize {
-        let chrome: CGFloat = model.printing ? 104 + 24 : 104
-        return CGSize(width: geo.size.width - 64, height: geo.size.height - chrome - 40)
-    }
-
-    /// Largest scale at which the whole paper fits the viewport with a margin.
-    private func fitScale(_ avail: CGSize) -> CGFloat {
-        let (wDots, hDots) = LabelRenderer.contentSize(model.doc)
-        guard wDots > 0, hDots > 0, avail.width > 60, avail.height > 60 else { return 2.0 }
-        let s = min(CGFloat(avail.width) / CGFloat(wDots), CGFloat(avail.height) / CGFloat(hDots))
-        return min(max(s, 0.5), 6)
     }
 }
