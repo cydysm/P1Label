@@ -203,7 +203,7 @@ private struct StepperField: View {
     var body: some View {
         HStack(spacing: 0) {
             Text(format(value))
-                .font(.system(size: 12))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Design.textPrimary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -251,7 +251,7 @@ private struct MenuField<T: Hashable>: View {
         } label: {
             HStack(spacing: 4) {
                 Text(options.first(where: { $0.value == selection })?.label ?? "—")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Design.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -322,7 +322,7 @@ private struct PositionField: View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
             .multilineTextAlignment(.center)
-            .font(.system(size: 12))
+            .font(.system(size: 11, weight: .medium))
             .foregroundColor(Design.textPrimary)
             .frame(height: 26)
             .fieldFrame()
@@ -598,10 +598,10 @@ struct ContentView: View {
                             el.kind == .qr ? "二维码内容" : "条码内容(字母/数字)",
                           text: binding.text)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Design.textPrimary)
                     .padding(.horizontal, 10)
-                    .frame(height: 26)
+                    .frame(height: 32)   // design: name input 304×32
                     .fieldFrame()
 
                 if el.kind == .text {
@@ -611,7 +611,7 @@ struct ContentView: View {
                             get: { Double(el.fontSize) },
                             set: { binding.wrappedValue.fontSize = CGFloat($0) }
                         ), range: 12...72, snap: 2)
-                        valueBox("\(Int(el.fontSize))", width: 44)
+                        valueBox("\(Int(el.fontSize))", width: 48)
                         boldToggle(binding)
                     }
                     HStack(spacing: 8) {
@@ -621,7 +621,7 @@ struct ContentView: View {
                             set: { binding.wrappedValue.width = Int($0.rounded()) }
                         ), range: 40...304, snap: 4)
                         Text(el.width == 0 ? "自动" : "\(el.width)")
-                            .font(.system(size: 12))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Design.textPrimary)
                             .monospacedDigit()
                             .frame(width: 40, alignment: .trailing)
@@ -633,7 +633,7 @@ struct ContentView: View {
                             get: { Double(el.size) },
                             set: { binding.wrappedValue.size = Int($0.rounded()) }
                         ), range: 24...160, snap: 4)
-                        valueBox("\(el.size)", width: 44)
+                        valueBox("\(el.size)", width: 48)
                     }
                 }
 
@@ -656,7 +656,7 @@ struct ContentView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: on ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 12))
+                    .font(.system(size: 14))
                     .foregroundStyle(on ? Design.accent : Design.textTertiary)
                 Text("粗体")
                     .font(.system(size: 11))
@@ -669,7 +669,7 @@ struct ContentView: View {
 
     private func valueBox(_ text: String, width: CGFloat) -> some View {
         Text(text)
-            .font(.system(size: 12))
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(Design.textPrimary)
             .monospacedDigit()
             .frame(width: width, height: 26)
@@ -754,7 +754,7 @@ struct ContentView: View {
                                            set: { model.darkLevel = Int($0) }),
                             range: 1...16, snap: 1)
                     Text("\(model.darkLevel)")
-                        .font(.system(size: 12))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Design.textPrimary)
                         .monospacedDigit()
                         .frame(width: 24, alignment: .trailing)
