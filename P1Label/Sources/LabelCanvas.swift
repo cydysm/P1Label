@@ -92,7 +92,8 @@ struct LabelCanvas: View {
                     ElementsCanvas(elements: staticElements, s: s, printableWidth: printableWidth)
                         .equatable()
                         .frame(width: paperW, height: paperH)
-                        .border(Color.gray.opacity(0.4), width: 1)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 4)
 
                     // Per-frame layer: dragged element at its live position plus
                     // the selection box for the selected element.
@@ -119,7 +120,7 @@ struct LabelCanvas: View {
                 .frame(width: paperW + 40, height: paperH + 40, alignment: .topLeading)
                 .frame(minWidth: geo.size.width, minHeight: geo.size.height)
             }
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(Color(red: 0xDC / 255, green: 0xE0 / 255, blue: 0xE9 / 255))
             .gesture(
                 MagnificationGesture()
                     .onChanged { v in
