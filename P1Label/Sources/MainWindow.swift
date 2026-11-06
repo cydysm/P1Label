@@ -431,7 +431,7 @@ struct ContentView: View {
             Spacer()
         }
         .frame(height: 52)
-        .background(Design.sidebarBg)
+        .background(Color(red: 0xF9 / 255, green: 0xFB / 255, blue: 0xFF / 255).opacity(0.9))
         .background(TitleBarDragView())
     }
 
@@ -866,10 +866,11 @@ struct ContentView: View {
                 .frame(height: 56)
                 .background(.white)
             }
-        // Design: pane 928 = 16 top + 48 info bar + 792 canvas + 56 status
-        // bar + 16 bottom — the info bar's top edge aligns with the device
-        // card's top edge (both 16pt below the title bar).
-        .padding(EdgeInsets(top: 16, leading: 12, bottom: 16, trailing: 12))
-        .background(Design.sidebarBg)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        // Design 画布区域: one 976×896 rounded-12 container holding the info
+        // bar, gray stage and status bar — the bars' outer corners are rounded
+        // by this clip. 画布内衬 padding = 16 top / 8 left / 16 bottom / 16 right.
+        .padding(EdgeInsets(top: 16, leading: 8, bottom: 16, trailing: 16))
+        .background(Color(red: 0xF9 / 255, green: 0xFB / 255, blue: 0xFF / 255).opacity(0.9))
     }
 }
