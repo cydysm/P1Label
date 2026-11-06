@@ -24,6 +24,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleVersion</key>           <string>1</string>
     <key>LSMinimumSystemVersion</key>    <string>12.0</string>
     <key>NSHighResolutionCapable</key>   <true/>
+    <key>NSRequiresAquaSystemAppearance</key> <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>NSBluetoothAlwaysUsageDescription</key><string>连接蓝牙标签打印机进行无线打印</string>
 </dict>
