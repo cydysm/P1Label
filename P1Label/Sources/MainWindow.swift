@@ -84,18 +84,19 @@ private func rowLabel(_ text: String, width: CGFloat) -> some View {
 
 // MARK: - Window chrome helpers
 
-/// hiddenTitleBar windows are not draggable by default; making the background
-/// movable restores title-bar-like dragging. Views with their own drag
-/// gestures (the canvas, sliders) consume the events first, so only empty
-/// chrome areas move the window.
-private struct MovableWindow: NSViewRepresentable {
-    final class MovableView: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            window?.isMovableByWindowBackground = true
+/// hiddenTitleBar windows have no title bar to drag. Enabling
+/// isMovableByWindowBackground instead would hijack EVERY drag — the canvas
+/// gesture surface is a non-opaque SwiftUI view, so the window-move machinery
+/// moves the window instead of dragging elements (verified on hardware).
+/// Fix: keep the flag off and forward mouse-downs from the title bar only to
+/// NSWindow.performDrag, which runs the real window-drag tracking loop.
+private struct TitleBarDragView: NSViewRepresentable {
+    final class DragView: NSView {
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
         }
     }
-    func makeNSView(context: Context) -> NSView { MovableView() }
+    func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
@@ -319,7 +320,7 @@ struct ContentView: View {
                                     Color(red: 0xE6 / 255, green: 0xE9 / 255, blue: 0xF2 / 255)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
         )
-        .background(MovableWindow())
+        .background(TitleBarDragView().allowsHitTesting(false))
         .onAppear { model.connect() }
     }
 
@@ -336,6 +337,7 @@ struct ContentView: View {
         .padding(.leading, 78)
         .frame(height: 52)
         .background(Design.sidebarBg)
+        .background(TitleBarDragView())
     }
 
     // MARK: Left column: device, tools, properties, paper, print
