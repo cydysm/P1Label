@@ -257,11 +257,15 @@ private struct PositionField: View {
     @State private var text = ""
 
     var body: some View {
+        // Left-aligned like every other field: .plain TextFields with
+        // .multilineTextAlignment(.center) on macOS don't render their text
+        // until focused (verified: value present via accessibility, invisible
+        // on screen).
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
-            .multilineTextAlignment(.center)
             .font(.system(size: 12))
-            .monospacedDigit()
+            .foregroundColor(Design.textPrimary)
+            .padding(.leading, 10)
             .frame(height: 26)
             .fieldFrame()
             .onAppear { text = "\(value)" }
