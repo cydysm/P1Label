@@ -719,83 +719,104 @@ struct ContentView: View {
     }
 
     private var canvasPane: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("标签预览")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Design.textPrimary)
-                Text(paperDescription)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Design.textSecondary)
-                Spacer()
-                Text("\(model.doc.elements.count) 个元素")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Design.textTertiary)
-            }
-            .padding(.horizontal, 16)
-            .frame(height: 48)
-            .background(.white)
-
-            Rectangle().fill(Design.hairline).frame(height: 1)
-
-            LabelCanvas(doc: $model.doc, selectedID: $model.selectedElementID,
-                        scale: $previewScale)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Design.canvasBg)
-
-            if model.printing {
-                ProgressView(value: model.progress)
-                    .progressViewStyle(.linear)
-                    .tint(Design.accent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 4)
-            }
-
-            Rectangle().fill(Design.hairline).frame(height: 1)
-
-            HStack(spacing: 10) {
-                Text("标签缩放")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Design.textSecondary)
-                HSlider(value: Binding(get: { Double(previewScale) },
-                                       set: { previewScale = CGFloat($0) }),
-                        range: 0.5...6)
-                    .frame(width: 120)
-                Button {
-                    previewScale = 2.0
-                } label: {
-                    Text("适应窗口")
-                        .font(.system(size: 11))
+        // Per the design: the info bar, canvas field and status bar form a
+        // 976pt column inside the 1000pt pane — a ~12pt strip of pane
+        // background shows on each side; the gray canvas field has rounded
+        // corners and meets the bars with no hairlines.
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Text("标签预览")
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Design.textPrimary)
-                        .padding(.horizontal, 10)
-                        .frame(height: 26)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(.white))
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Design.fieldBorder, lineWidth: 1))
-                        .contentShape(Rectangle())
+                    Text(paperDescription)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Design.textSecondary)
+                    Spacer()
+                    Text("\(model.doc.elements.count) 个元素")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Design.textTertiary)
                 }
-                .buttonStyle(.plain)
-                Spacer()
-                Button {
-                    model.print_()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "printer")
-                            .font(.system(size: 12, weight: .medium))
-                        Text(model.printing ? "发送中…" : "打印")
-                            .font(.system(size: 13, weight: .medium))
+                .padding(.horizontal, 16)
+                .frame(height: 48)
+                .background(.white)
+
+                LabelCanvas(doc: $model.doc, selectedID: $model.selectedElementID,
+                            scale: $previewScale)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Design.canvasBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                if model.printing {
+                    ProgressView(value: model.progress)
+                        .progressViewStyle(.linear)
+                        .tint(Design.accent)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 4)
+                }
+
+                HStack(spacing: 10) {
+                    Text("标签缩放")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Design.textSecondary)
+                    HSlider(value: Binding(get: { Double(previewScale) },
+                                           set: { previewScale = CGFloat($0) }),
+                            range: 0.5...6)
+                        .frame(width: 120)
+                    Button {
+                        previewScale = fitScale(canvasViewport(geo))
+                    } label: {
+                        Text("适应窗口")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Design.textPrimary)
+                            .padding(.horizontal, 10)
+                            .frame(height: 26)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(.white))
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Design.fieldBorder, lineWidth: 1))
+                            .contentShape(Rectangle())
                     }
-                    .foregroundStyle(.white)
-                    .frame(width: 85, height: 36)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Design.accent))
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    Spacer()
+                    Button {
+                        model.print_()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "printer")
+                                .font(.system(size: 12, weight: .medium))
+                            Text(model.printing ? "发送中…" : "打印")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(width: 85, height: 36)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Design.accent))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!model.connected || model.printing)
+                    .opacity(model.connected ? 1 : 0.4)
                 }
-                .buttonStyle(.plain)
-                .disabled(!model.connected || model.printing)
-                .opacity(model.connected ? 1 : 0.4)
+                .padding(.horizontal, 16)
+                .frame(height: 56)
+                .background(.white)
             }
-            .padding(.horizontal, 16)
-            .frame(height: 56)
-            .background(.white)
+            .onAppear { previewScale = fitScale(canvasViewport(geo)) }
         }
+        .padding(.horizontal, 12)
+        .background(Design.sidebarBg)
+    }
+
+    /// Canvas scroll-viewport size: pane minus the two bars, the 12pt side
+    /// insets and the 40pt paper margin inside LabelCanvas's scroll content.
+    private func canvasViewport(_ geo: GeometryProxy) -> CGSize {
+        let chrome: CGFloat = model.printing ? 104 + 24 : 104
+        return CGSize(width: geo.size.width - 64, height: geo.size.height - chrome - 40)
+    }
+
+    /// Largest scale at which the whole paper fits the viewport with a margin.
+    private func fitScale(_ avail: CGSize) -> CGFloat {
+        let (wDots, hDots) = LabelRenderer.contentSize(model.doc)
+        guard wDots > 0, hDots > 0, avail.width > 60, avail.height > 60 else { return 2.0 }
+        let s = min(CGFloat(avail.width) / CGFloat(wDots), CGFloat(avail.height) / CGFloat(hDots))
+        return min(max(s, 0.5), 6)
     }
 }
