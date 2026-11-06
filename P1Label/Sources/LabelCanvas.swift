@@ -54,7 +54,6 @@ struct LabelCanvas: View {
     @State private var drag: Drag?
     /// Element queued for deletion; the confirmation alert runs before it is
     /// actually removed.
-    @State private var pendingDelete: LabelElement?
 
     enum Mode { case move, resize }
 
@@ -107,15 +106,11 @@ struct LabelCanvas: View {
                         .frame(width: paperW, height: paperH)
                         .gesture(paperGesture(s: s))
 
-                    // Delete badge for the selected element, above the gesture
-                    // surface so a click lands on the badge; taps elsewhere
-                    // fall through (no background content shape) to the paper
-                    // gesture. Hidden while a drag previews — the badge would
-                    // sit at the element's pre-drag corner and read as a ghost.
-                    if drag == nil {
-                        deleteButtons(s: s)
-                            .frame(width: paperW, height: paperH)
-                    }
+                    // Interactive controls pinned to the selection frame. Must
+                    // sit ABOVE the gesture surface: a click on them has to
+                    // reach the button, not start a paper drag.
+                    selectionControls(s: s)
+                        .frame(width: paperW, height: paperH, alignment: .topLeading)
                 }
                 .frame(width: paperW + 40, height: paperH + 40, alignment: .topLeading)
                 .frame(minWidth: geo.size.width, minHeight: geo.size.height)
@@ -130,21 +125,6 @@ struct LabelCanvas: View {
                     }
                     .onEnded { _ in pinchBase = nil }
             )
-            .alert("删除元素",
-                   isPresented: Binding(
-                       get: { pendingDelete != nil },
-                       set: { if !$0 { pendingDelete = nil } }
-                   )) {
-                Button("删除", role: .destructive) {
-                    if let el = pendingDelete { removeElement(el) }
-                    pendingDelete = nil
-                }
-                Button("取消", role: .cancel) { pendingDelete = nil }
-            } message: {
-                if let el = pendingDelete {
-                    Text(Self.deleteConfirmMessage(el))
-                }
-            }
         }
     }
 
@@ -384,45 +364,45 @@ struct LabelCanvas: View {
         }
     }
 
+    /// Selection accent from the UI design (pagx): blue frame stroke and a
+    /// white rounded handle.
+    static let selectionBlue = Color(red: 0x0A / 255, green: 0x60 / 255, blue: 0xFF / 255)
+
     private func drawSelectionBox(_ rect: CGRect, into ctx: inout GraphicsContext) {
-        ctx.stroke(Path(rect.insetBy(dx: -2, dy: -2)), with: .color(.blue), lineWidth: 1)
-        let handle = CGRect(x: rect.maxX - 6, y: rect.maxY - 6, width: 12, height: 12)
-        ctx.fill(Path(ellipseIn: handle), with: .color(.blue))
-        ctx.stroke(Path(ellipseIn: handle.insetBy(dx: -1.5, dy: -1.5)),
-                   with: .color(.white), lineWidth: 1.5)
+        let frame = rect.insetBy(dx: -2, dy: -2)
+        ctx.stroke(Path(frame), with: .color(Self.selectionBlue), lineWidth: 1.2)
+        let handle = CGRect(x: frame.maxX - 6, y: frame.maxY - 6, width: 12, height: 12)
+        let handlePath = Path(roundedRect: handle, cornerRadius: 2.5)
+        ctx.fill(handlePath, with: .color(.white))
+        ctx.stroke(handlePath, with: .color(Self.selectionBlue), lineWidth: 1.2)
     }
 
     // MARK: - Per-element delete
 
-    /// Trash-can badge for the SELECTED element only, centered on the
-    /// selection box's top-right corner (the resize handle owns the
-    /// bottom-right one). Solid red dot with a white ring and the trash
-    /// glyph — red so deletion reads as destructive, in contrast to the
-    /// blue selection handles. Deletion goes through the confirmation
-    /// alert (pendingDelete) before the element is removed.
-    @ViewBuilder
-    private func deleteButtons(s: CGFloat) -> some View {
+    /// Delete button pinned to the selection frame's top-right corner,
+    /// centered on the corner. Sized in screen points (not scaled) so it stays
+    /// tappable at every zoom level. Clicking deletes immediately — no
+    /// confirmation (user preference, matches the pre-PR5 behavior).
+    private func selectionControls(s: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
-            if let el = doc.elements.first(where: { $0.id == selectedID }) {
-                let rect = elementRect(el, s: s)
+            if let sel = doc.elements.first(where: { $0.id == selectedID }) {
+                let eff = effective(sel)
+                let rect = elementRect(sel, s: s, x: eff.x, y: eff.y,
+                                       fontSize: eff.fontSize, size: eff.size)
                 Button {
-                    pendingDelete = el
+                    removeElement(sel)
                 } label: {
-                    Image(systemName: "trash")
+                    Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(Self.selectionBlue)
                         .frame(width: 18, height: 18)
-                        .background(Circle().fill(Color.red))
-                        .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+                        .background(Circle().fill(.white))
+                        .overlay(Circle().stroke(Self.selectionBlue, lineWidth: 1.2))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .help("删除该元素")
-                // Centered on the selection box's corner (the box is stroked
-                // 2pt outside the element rect). Nudged inside the paper at
-                // the top/left edges, where the scroll content has no margin
-                // to overflow into.
-                .position(x: max(rect.maxX + 2, 10), y: max(rect.minY - 2, 10))
+                .help("删除选中元素")
+                .position(x: rect.maxX, y: rect.minY)
             }
         }
     }
@@ -430,14 +410,6 @@ struct LabelCanvas: View {
     private func removeElement(_ el: LabelElement) {
         doc.elements.removeAll { $0.id == el.id }
         if selectedID == el.id { selectedID = nil }
-    }
-
-    private static func deleteConfirmMessage(_ el: LabelElement) -> String {
-        let snippet = el.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let named = snippet.isEmpty
-            ? "这个\(el.kind.label)元素"
-            : "\(el.kind.label)“\(snippet.prefix(12))”"
-        return "确定删除\(named)吗？删除后无法恢复。"
     }
 
     /// Static paper layer. Equatable so SwiftUI skips re-rendering it when only
