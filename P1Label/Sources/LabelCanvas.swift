@@ -479,11 +479,11 @@ struct LabelCanvas: View {
                 let tw = CGFloat(el.wrapWidth(at: x, printableWidth: printableWidth)) * s
                 ctx.draw(text, in: CGRect(x: rect.minX, y: rect.minY, width: tw, height: rect.height))
             case .qr:
-                if let cg = LabelRenderer.qrImage(text: el.text, size: size) {
+                if let cg = LabelRenderer.qrImage(text: el.text, size: size, pixelScale: 4) {
                     ctx.draw(Image(cg, scale: 1, orientation: .up, label: Text("二维码")), in: rect)
                 }
             case .barcode:
-                if let cg = LabelRenderer.barcodeImage(text: el.text, height: size) {
+                if let cg = LabelRenderer.barcodeImage(text: el.text, height: size, pixelScale: 4) {
                     ctx.draw(Image(cg, scale: 1, orientation: .up, label: Text("条码")), in: rect)
                 }
             }
