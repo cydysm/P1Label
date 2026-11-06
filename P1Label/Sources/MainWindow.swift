@@ -262,6 +262,7 @@ private struct MenuField<T: Hashable>: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .frame(height: 26)   // design: 240×26 — borderless menus otherwise render ~30
         .frame(maxWidth: .infinity)
         .fieldFrame()
         .overlay(alignment: .trailing) {
@@ -621,8 +622,8 @@ struct ContentView: View {
                             set: { binding.wrappedValue.width = Int($0.rounded()) }
                         ), range: 40...304, snap: 4)
                         Text(el.width == 0 ? "自动" : "\(el.width)")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Design.textPrimary)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Design.textSecondary)
                             .monospacedDigit()
                             .frame(width: 40, alignment: .trailing)
                     }
@@ -833,8 +834,8 @@ struct ContentView: View {
                         previewScale = 2.0
                     } label: {
                         Text("适应窗口")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Design.textPrimary)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Design.textMid)
                             .padding(.horizontal, 10)
                             .frame(height: 28)   // design: 60×28
                             .background(RoundedRectangle(cornerRadius: 6).fill(.white))
