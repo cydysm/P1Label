@@ -248,6 +248,31 @@ private struct Segmented<T: Hashable>: View {
 private func formatMM0(_ v: Double) -> String { String(format: "%.0f mm", v) }
 private func formatMM1(_ v: Double) -> String { String(format: "%.1f mm", v) }
 
+/// Numeric text field that commits valid (>= 0) integers on every keystroke
+/// and resyncs its display from the binding on submit and external changes
+/// (drags, steppers, element switches).
+private struct PositionField: View {
+    var placeholder: String
+    @Binding var value: Int
+    @State private var text = ""
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(.center)
+            .font(.system(size: 12))
+            .monospacedDigit()
+            .frame(height: 26)
+            .fieldFrame()
+            .onAppear { text = "\(value)" }
+            .onChange(of: value) { text = "\($0)" }
+            .onChange(of: text) { new in
+                if let v = Int(new), v >= 0, v != value { value = v }
+            }
+            .onSubmit { text = "\(value)" }
+    }
+}
+
 // MARK: - Main view
 
 struct ContentView: View {
@@ -320,7 +345,7 @@ struct ContentView: View {
                                     Color(red: 0xE6 / 255, green: 0xE9 / 255, blue: 0xF2 / 255)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
         )
-        .background(TitleBarDragView().allowsHitTesting(false))
+        .background(Color.clear)
         .onAppear { model.connect() }
     }
 
@@ -349,6 +374,11 @@ struct ContentView: View {
                 addElementsSection
                 if let el = model.selectedElement {
                     elementSection(el)
+                        // New identity per selected element: otherwise the
+                        // TextFields keep their internal edit state across
+                        // selection changes and show the previous element's
+                        // stale content (verified: new element showed "1").
+                        .id(model.selectedElementID)
                 }
                 paperSection
                 printSection
@@ -575,16 +605,12 @@ struct ContentView: View {
             .fieldFrame()
     }
 
-    /// Editable x/y numeric field; negative input clamps to 0.
+    /// Editable x/y numeric field. String-backed (not TextField(value:format:))
+    /// because a failed parse there leaves the field showing the stale typed
+    /// text (e.g. empty) with no way back to the real value until it changes.
     private func positionField(_ placeholder: String,
                                value: Binding<Int>) -> some View {
-        TextField(placeholder, value: value, format: .number.grouping(.never))
-            .textFieldStyle(.plain)
-            .multilineTextAlignment(.center)
-            .font(.system(size: 12))
-            .monospacedDigit()
-            .frame(height: 26)
-            .fieldFrame()
+        PositionField(placeholder: placeholder, value: value)
     }
 
     // MARK: Paper
