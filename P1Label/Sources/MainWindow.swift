@@ -334,22 +334,27 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             titleBar
-            Rectangle().fill(Design.hairline).frame(height: 1)
+            // The design's 工具栏分隔线 layer is 0pt tall — no visible rule.
             HStack(spacing: 0) {
                 sidebar
                     .frame(width: 360)
-                    .overlay(alignment: .trailing) {
-                        Rectangle().fill(Design.hairline).frame(width: 1)
-                    }
                 canvasPane
             }
+            // Body base per the design (bg3 #ECEFF6); the sidebar overlays it
+            // with rgba(249,251,255,0.9) and the canvas pane is solid #F9FBFF.
+            .background(Color(red: 0xEC / 255, green: 0xEF / 255, blue: 0xF6 / 255))
         }
         .background(
             LinearGradient(colors: [Color(red: 0xF5 / 255, green: 0xF6 / 255, blue: 0xFA / 255),
                                     Color(red: 0xE6 / 255, green: 0xE9 / 255, blue: 0xF2 / 255)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
         )
-        .background(Color.clear)
+        // hiddenTitleBar still reserves a ~28pt top safe-area inset, which
+        // pushed the whole title bar BELOW the traffic lights (verified on
+        // hardware). Ignoring it puts our 52pt bar at y=0 with the lights
+        // overlaying it — title and lights on one row, as in the design.
+        .ignoresSafeArea(edges: .top)
+        .background(TitleBarDragView().allowsHitTesting(false))
         .onAppear { model.connect() }
     }
 
@@ -362,8 +367,9 @@ struct ContentView: View {
                 .foregroundStyle(Design.textPrimary)
             Spacer()
         }
-        // Leaves room for the traffic lights (hiddenTitleBar keeps them).
-        .padding(.leading, 78)
+        // Design: 52pt row, lights block then 16pt gap then the 14pt title —
+        // the real traffic lights end at ~x58, so 58+16 = 74.
+        .padding(.leading, 74)
         .frame(height: 52)
         .background(Design.sidebarBg)
         .background(TitleBarDragView())
@@ -389,7 +395,7 @@ struct ContentView: View {
             }
             .padding(16)
         }
-        .background(Design.sidebarBg)
+        .background(Color(red: 0xF9 / 255, green: 0xFB / 255, blue: 0xFF / 255).opacity(0.9))
     }
 
     // MARK: Device status card
@@ -422,6 +428,8 @@ struct ContentView: View {
             if let detail = connectionError {
                 Text(detail)
                     .font(.system(size: 11))
+                    // Design line-height is 17px for 11px text.
+                    .lineSpacing(4)
                     .foregroundStyle(Design.errorText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -539,7 +547,7 @@ struct ContentView: View {
 
                 if el.kind == .text {
                     HStack(spacing: 8) {
-                        rowLabel("字号", width: 30)
+                        rowLabel("字号", width: 58)
                         HSlider(value: Binding(
                             get: { Double(el.fontSize) },
                             set: { binding.wrappedValue.fontSize = CGFloat($0) }
@@ -548,7 +556,7 @@ struct ContentView: View {
                         boldToggle(binding)
                     }
                     HStack(spacing: 8) {
-                        rowLabel("换行宽", width: 44)
+                        rowLabel("换行宽", width: 58)
                         HSlider(value: Binding(
                             get: { Double(el.width == 0 ? 200 : el.width) },
                             set: { binding.wrappedValue.width = Int($0.rounded()) }
@@ -561,7 +569,7 @@ struct ContentView: View {
                     }
                 } else {
                     HStack(spacing: 8) {
-                        rowLabel(el.kind == .qr ? "尺寸" : "高度", width: 30)
+                        rowLabel(el.kind == .qr ? "尺寸" : "高度", width: 58)
                         HSlider(value: Binding(
                             get: { Double(el.size) },
                             set: { binding.wrappedValue.size = Int($0.rounded()) }
@@ -571,7 +579,7 @@ struct ContentView: View {
                 }
 
                 HStack(spacing: 8) {
-                    rowLabel("位置", width: 30)
+                    rowLabel("位置", width: 58)
                     positionField("X", value: Binding(
                         get: { el.x }, set: { binding.wrappedValue.x = max(0, $0) }))
                     positionField("Y", value: Binding(
@@ -624,7 +632,7 @@ struct ContentView: View {
             sectionTitle("纸张")
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    rowLabel("尺寸", width: 30)
+                    rowLabel("尺寸", width: 58)
                     MenuField(selection: paperSelection,
                               options: PaperPreset.all.map { ($0.name, $0.id) }
                                       + [("自定义", PaperPreset.customID)])
@@ -635,23 +643,23 @@ struct ContentView: View {
                         .foregroundStyle(Design.textTertiary)
                 }
                 HStack(spacing: 8) {
-                    rowLabel("宽", width: 30)
+                    rowLabel("宽", width: 58)
                     StepperField(value: paperWidthBinding, range: 20...48, step: 1,
                                  format: formatMM0)
                 }
                 HStack(spacing: 8) {
-                    rowLabel("高", width: 30)
+                    rowLabel("高", width: 58)
                     StepperField(value: paperHeightBinding, range: 10...100, step: 1,
                                  format: formatMM0)
                 }
                 HStack(spacing: 8) {
-                    rowLabel("类型", width: 30)
+                    rowLabel("类型", width: 58)
                     MenuField(selection: $model.isDieCut,
                               options: [("模切标签（有间隙）", true), ("连续纸", false)])
                 }
                 if model.isDieCut {
                     HStack(spacing: 8) {
-                        rowLabel("间隙", width: 30)
+                        rowLabel("间隙", width: 58)
                         StepperField(value: $model.gapLenMM, range: 1...10, step: 0.5,
                                      format: formatMM1)
                     }
@@ -677,12 +685,12 @@ struct ContentView: View {
             sectionTitle("打印")
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    rowLabel("份数", width: 44)
+                    rowLabel("份数", width: 58)
                     StepperField(value: copiesBinding, range: 1...50, step: 1,
                                  format: { String(format: "%.0f", $0) })
                 }
                 HStack(spacing: 8) {
-                    rowLabel("浓度", width: 44)
+                    rowLabel("浓度", width: 58)
                     HSlider(value: Binding(get: { Double(model.darkLevel) },
                                            set: { model.darkLevel = Int($0) }),
                             range: 1...16, snap: 1)
@@ -693,17 +701,17 @@ struct ContentView: View {
                         .frame(width: 24, alignment: .trailing)
                 }
                 HStack(spacing: 8) {
-                    rowLabel("水平偏移", width: 44)
+                    rowLabel("水平偏移", width: 58)
                     StepperField(value: leftPadBinding, range: 0...120, step: 1,
                                  format: { String(format: "%.0f 点", $0) })
                 }
                 HStack(spacing: 8) {
-                    rowLabel("上边距", width: 44)
+                    rowLabel("上边距", width: 58)
                     StepperField(value: $model.doc.marginTopMM, range: 0...10, step: 0.5,
                                  format: formatMM1)
                 }
                 HStack(spacing: 8) {
-                    rowLabel("下边距", width: 44)
+                    rowLabel("下边距", width: 58)
                     StepperField(value: $model.doc.marginBottomMM, range: 0...10, step: 0.5,
                                  format: formatMM1)
                 }
@@ -770,7 +778,7 @@ struct ContentView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(Design.textPrimary)
                             .padding(.horizontal, 10)
-                            .frame(height: 26)
+                            .frame(height: 28)   // design: 60×28
                             .background(RoundedRectangle(cornerRadius: 6).fill(.white))
                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Design.fieldBorder, lineWidth: 1))
                             .contentShape(Rectangle())
