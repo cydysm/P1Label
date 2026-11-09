@@ -530,20 +530,24 @@ struct LabelCanvas: View {
             d.dx = dx
             d.dy = dy
         case .resizeCorner:
-            // 右下角手柄：左上角为锚点，等比缩放字号/尺寸。
+            // 右下角手柄：左上角为锚点，等比缩放。
             //
-            // 文本必须连换行宽一起等比缩放（断行比例不变 → 墨迹宽高都与
-            // ratio 成线性），否则字号一碰到固定换行宽就被钳住、框停止
-            // 变大而光标继续走——手柄会逐渐脱离光标（用户实测）。自动宽度
-            // 在缩放期间物化为当前自动值；没有实际缩放就不会写文档。
+            // ratio 取 max(Δx/框宽, Δy/框高)——光标领先的那个轴 1:1 贴住光标，
+            // 另一轴按比例跟随。此前用"光标到锚点的直线距离比"，斜向手柄只沿
+            // 对角线走，横/竖拖时偏差随距离线性增长（所有元素都会飘，用户实测）。
+            //
+            // 文本还必须连换行宽一起等比缩放（断行比例不变 → 墨迹宽高都与
+            // ratio 成线性），否则字号碰到固定换行宽就被钳住、框停止变大。
+            // 自动宽度在缩放期间物化为当前自动值；没有实际缩放不写文档。
             guard let base = d.primary else { break }
             let local = CGPoint(x: g.location.x - offset.x, y: g.location.y - offset.y)
             let rect = elementRect(base, s: s)
             let anchor = CGPoint(x: rect.minX, y: rect.minY)
-            let startLocal = CGPoint(x: d.start.x - offset.x, y: d.start.y - offset.y)
-            let startDist = max(hypot(startLocal.x - anchor.x, startLocal.y - anchor.y), 8)
-            let dist = max(hypot(local.x - anchor.x, local.y - anchor.y), 4)
-            let ratio = max(0.2, min(5.0, dist / startDist))
+            let w0 = max(rect.width / s, 1)   // base 框宽（点）
+            let h0 = max(rect.height / s, 1)  // base 框高（点）
+            let dxDots = (local.x - anchor.x) / s
+            let dyDots = (local.y - anchor.y) / s
+            let ratio = max(0.2, min(5.0, max(dxDots / w0, dyDots / h0)))
             switch base.kind {
             case .text:
                 d.fontSize = min(72, max(12, (base.fontSize * ratio).rounded()))
