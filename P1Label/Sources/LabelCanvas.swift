@@ -102,6 +102,8 @@ struct LabelCanvas: View {
         var dy: Int = 0
         var fontSize: CGFloat?
         var size: Int?
+        /// 缩放文本时的暂定换行宽（随字号等比缩放，保持断行比例）。
+        var wrapWidth: Int?
         /// Live marquee rect in viewport coordinates.
         var marquee: CGRect?
         /// Pan base offset (viewport coords of the paper at gesture start).
@@ -529,6 +531,11 @@ struct LabelCanvas: View {
             d.dy = dy
         case .resizeCorner:
             // 右下角手柄：左上角为锚点，等比缩放字号/尺寸。
+            //
+            // 文本必须连换行宽一起等比缩放（断行比例不变 → 墨迹宽高都与
+            // ratio 成线性），否则字号一碰到固定换行宽就被钳住、框停止
+            // 变大而光标继续走——手柄会逐渐脱离光标（用户实测）。自动宽度
+            // 在缩放期间物化为当前自动值；没有实际缩放就不会写文档。
             guard let base = d.primary else { break }
             let local = CGPoint(x: g.location.x - offset.x, y: g.location.y - offset.y)
             let rect = elementRect(base, s: s)
@@ -540,6 +547,11 @@ struct LabelCanvas: View {
             switch base.kind {
             case .text:
                 d.fontSize = min(72, max(12, (base.fontSize * ratio).rounded()))
+                let baseWrap = base.width > 0
+                    ? CGFloat(base.width)
+                    : CGFloat(base.wrapWidth(at: base.x, printableWidth: printableWidth))
+                let maxW = CGFloat(max(32, printableWidth - base.x))
+                d.wrapWidth = Int(min(max(baseWrap * ratio, 32), maxW).rounded())
             case .qr, .barcode:
                 d.size = Int(min(200, max(24, (CGFloat(base.size) * ratio).rounded())))
             }
@@ -578,7 +590,13 @@ struct LabelCanvas: View {
             guard let base = d.primary,
                   let idx = doc.elements.firstIndex(where: { $0.id == base.id }) else { return }
             var newDoc = doc
-            if let fs = d.fontSize, fs != base.fontSize { newDoc.elements[idx].fontSize = fs }
+            if let fs = d.fontSize, fs != base.fontSize {
+                newDoc.elements[idx].fontSize = fs
+                // 换行宽随字号一起提交（保持断行比例）；自动宽度借此物化。
+                if let w = d.wrapWidth { newDoc.elements[idx].width = w }
+            } else if base.width > 0, let w = d.wrapWidth, w != base.width {
+                newDoc.elements[idx].width = w
+            }
             if let sz = d.size, sz != base.size { newDoc.elements[idx].size = sz }
             if newDoc != doc { doc = newDoc }
         case .marquee:
