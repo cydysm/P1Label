@@ -104,6 +104,8 @@ struct LabelCanvas: View {
         var fontSize: CGFloat?
         var size: Int?
         var wrapWidth: Int?
+        /// 左边中点手柄拖拽时的暂定 x（右缘固定，左缘跟随光标）。
+        var pendingX: Int?
         /// Live marquee rect in viewport coordinates.
         var marquee: CGRect?
         /// Pan base offset (viewport coords of the paper at gesture start).
@@ -331,7 +333,7 @@ struct LabelCanvas: View {
             return (base.x + d.dx, base.y + d.dy, base.fontSize, base.size, base.width)
         case .resizeCorner, .resizeEdge:
             guard let base = d.primary, base.id == el.id else { return unchanged }
-            return (base.x, base.y, d.fontSize ?? base.fontSize,
+            return (d.pendingX ?? base.x, base.y, d.fontSize ?? base.fontSize,
                     d.size ?? base.size, d.wrapWidth ?? base.width)
         default:
             return unchanged
@@ -570,12 +572,19 @@ struct LabelCanvas: View {
         case .resizeEdge(let edge):
             guard let base = d.primary, base.kind == .text else { break }
             let local = CGPoint(x: g.location.x - offset.x, y: g.location.y - offset.y)
-            let rect = elementRect(base, s: s)
-            let anchorX = edge == .left ? rect.maxX : rect.minX
-            let widthPoints = abs(local.x - anchorX)
-            let widthDots = Int((widthPoints / s).rounded())
-            let maxW = max(32, printableWidth - base.x)
-            d.wrapWidth = min(max(widthDots, 32), maxW)
+            let rect = elementRect(base, s: s)   // paper-local points, base 的文本框
+            if edge == .right {
+                // 右手柄：左缘固定，宽度跟随光标。
+                let widthDots = Int(((local.x - rect.minX) / s).rounded())
+                let maxW = max(32, printableWidth - base.x)
+                d.wrapWidth = min(max(widthDots, 32), maxW)
+            } else {
+                // 左手柄：右缘固定，左缘（x）跟随光标，宽度 = 右缘 - 左缘。
+                let anchorDots = Int((rect.maxX / s).rounded())
+                let left = max(0, min(Int((local.x / s).rounded()), anchorDots - 32))
+                d.pendingX = left
+                d.wrapWidth = anchorDots - left
+            }
         case .marquee:
             d.marquee = CGRect(x: min(d.start.x, g.location.x),
                                y: min(d.start.y, g.location.y),
@@ -613,6 +622,7 @@ struct LabelCanvas: View {
             var newDoc = doc
             if let fs = d.fontSize, fs != base.fontSize { newDoc.elements[idx].fontSize = fs }
             if let sz = d.size, sz != base.size { newDoc.elements[idx].size = sz }
+            if let nx = d.pendingX, nx != base.x { newDoc.elements[idx].x = nx }
             if let w = d.wrapWidth, w != base.width { newDoc.elements[idx].width = w }
             if newDoc != doc { doc = newDoc }
         case .marquee:
@@ -988,9 +998,13 @@ private struct ElementsCanvas: View, Equatable {
             if let img = LabelRenderer.textPreviewImage(text: el.text, fontSize: fontSize,
                                                         bold: el.bold, width: wrapW,
                                                         pixelScale: bucket) {
-                let image = Image(img, scale: bucket, orientation: .up,
-                                  label: Text("文本"))
-                ctx.draw(image, in: rect)
+                // 框（rect）宽 = 设定换行宽，可宽于墨迹；位图按墨迹自然宽度
+                // 左上对齐绘制，避免水平拉伸。
+                let inkW = CGFloat(img.width) / bucket * s
+                let inkRect = CGRect(x: rect.minX, y: rect.minY,
+                                     width: min(rect.width, inkW), height: rect.height)
+                ctx.draw(Image(img, scale: bucket, orientation: .up, label: Text("文本")),
+                         in: inkRect)
             }
         case .qr:
             if let cg = LabelRenderer.qrImage(text: el.text, size: size, pixelScale: 4,

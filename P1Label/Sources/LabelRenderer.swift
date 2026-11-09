@@ -126,6 +126,9 @@ struct LabelElement: Identifiable, Equatable, Codable {
         case .barcode: return LabelRenderer.barcodeWidth(text: text, height: size)
         case .text:
             let w = wrapWidth(at: xPos, width: width, printableWidth: printableWidth)
+            // 设定了换行宽（>0）时文本框宽 = 设定值，可以宽于墨迹（拖边中点
+            // 加宽时框要跟着走，否则手柄看起来"无效"）；自动宽度仍贴合墨迹。
+            if (width ?? self.width) > 0 { return w }
             return min(w, LabelRenderer.measureText(text: text, fontSize: fontSize, bold: bold, width: w).1)
         }
     }
