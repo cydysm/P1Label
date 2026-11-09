@@ -5,6 +5,21 @@
 ## 架构速查
 
 - `P1Label/Sources/LabelCanvas.swift` — 交互画布。文件头注释解释了拖拽机制，**改拖拽相关代码前必读**。
+  v2（2026-11）起新增：多选框选、画布内联文本编辑、滚轮/⌘滚轮/空格平移缩放（§5.7），
+  全部折叠进同一个静态手势面。整体文档写经 `doc` binding（ContentView 侧接
+  `PrintModel.applyCanvasWrite` 入撤销栈）；选择状态走 `selection`/`primaryID` 两个 binding。
+- `P1Label/Sources/DesignSystem.swift` — 设计 token v2（docs/design-spec-v2.md §3.2）与
+  共享控件（StepperField/PickerField/PositionField/PillButton/IconButton/ZoomStepper）。
+  取色一律走 `Design.*`，新代码禁止裸 `Color(red:green:blue:)`。
+- `P1Label/Sources/Inspector.swift` — 右栏属性检查器（无选择=文档概要+份数/浓度，
+  单选=元素属性，多选=对齐/分布/删除，底部=图层列表+打印按钮）。
+- `P1Label/Sources/History.swift` — 快照式撤销/重做栈（v2 §5.3）。文档写入必须收敛到
+  `PrintModel.mutate`（离散修改）或 `editText`（连续击键/滑杆合并为一条撤销）；
+  画布手势经 `applyCanvasWrite`。绕过这些入口的写入不会进撤销栈。
+- `P1Label/Sources/MainWindow.swift` — 主窗口骨架：48pt 顶栏 + 44pt 工具栏 + 画布区 +
+  280(240–340)pt 检查器 + 32pt 状态条；设备/纸张配置在 308pt popover 卡片。
+  系统红绿灯 + `WindowDragStrip`（仅顶栏转发 performDrag，勿开
+  `isMovableByWindowBackground`——会劫持画布拖拽）。
 - `P1Label/Sources/LPAPI.swift` — 打印协议编码（逆向自 Detong lpapi-ble-uni SDK）。
 - `P1Label/Sources/P1USB.swift` — libusb 传输。`sendPage` 的盲发节奏是对硬件验证过的设计，勿改。
 - `P1Label/Sources/P1BLE.swift` — CoreBluetooth 蓝牙传输（2026-11 真机验证通过），与 P1USB
@@ -33,6 +48,10 @@
   python3（homebrew，非 /usr/bin/python3），PNG 回退模式下结果打印到 stdout。
   注意：2026-11 起画布新增吸附对齐（`LabelCanvas.snapped`），拖拽轨迹靠近对齐线时
   元素位移会被吸附修正——重跑 harness 与历史基准对比前先考虑这一影响。
+  另：v2 UI 重构后 `LabelCanvas` 签名变为
+  `LabelCanvas(model:doc:selection:primaryID:scale:spacePanning:snapEnabled:)`；
+  harness 目录内的冻结源码副本（baseline_src/multi_src/src_instr）不受影响，
+  但要对最新代码重跑需先适配 HarnessMain 的调用与 PrintModel。
 
 ## 已踩过的坑（勿重蹈）
 

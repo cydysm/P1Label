@@ -476,7 +476,7 @@ private struct LayerRow: View {
 
     private var kindSymbol: String {
         switch el.kind {
-        case .text: return "textformat"
+        case .text: return "textformat.alt"
         case .qr: return "qrcode"
         case .barcode: return "barcode"
         }

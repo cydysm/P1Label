@@ -72,6 +72,8 @@ struct LabelCanvas: View {
     @FocusState private var inlineFocus: Bool
     /// Double-click detection for inline editing.
     @State private var lastClick: (time: Date, point: CGPoint)?
+    /// 首次布局时适应窗口一次（§2.2），之后缩放/平移归用户。
+    @State private var didInitialFit = false
 
     // MARK: Drag model
 
@@ -199,7 +201,15 @@ struct LabelCanvas: View {
                 viewportSize = geo.size
                 registerScrollHandler()
             }
-            .onChange(of: geo.size) { viewportSize = $0 }
+            .onChange(of: geo.size) { newSize in
+                viewportSize = newSize
+                // 纸张随窗口尺寸自动"适应"缩放（§2.2）：首次拿到视口尺寸时
+                // fit 一次并居中，之后保持用户的缩放/平移。
+                if !didInitialFit, newSize.width > 100, newSize.height > 100 {
+                    didInitialFit = true
+                    fitToWindow(wDots: wDots, hDots: hDots, viewport: newSize)
+                }
+            }
             .onDisappear { model.canvasScrollHandler = nil }
             .onChange(of: model.fitRequested) { requested in
                 guard requested else { return }
