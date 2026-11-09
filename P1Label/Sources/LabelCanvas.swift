@@ -532,43 +532,28 @@ struct LabelCanvas: View {
             d.dx = dx
             d.dy = dy
         case .resizeCorner:
-            // 右下角手柄：左上角为锚点，等比缩放。
+            // 右下角手柄：左上角为锚点，等比缩放。映射细节集中在
+            // CanvasResize（纯几何，不依赖 SwiftUI，可被探针/harness 直接编译），
+            // 这里只做手势状态接线：
             //
-            // ratio 取 max(Δx/框宽, Δy/框高)——光标领先的那个轴 1:1 贴住光标，
-            // 另一轴按比例跟随。此前用"光标到锚点的直线距离比"，斜向手柄只沿
-            // 对角线走，横/竖拖时偏差随距离线性增长（所有元素都会飘，用户实测）。
-            //
-            // 文本还必须连换行宽一起等比缩放（断行比例不变 → 墨迹宽高都与
-            // ratio 成线性），否则字号碰到固定换行宽就被钳住、框停止变大。
-            // 自动宽度在缩放期间物化为当前自动值；没有实际缩放不写文档。
+            // ratio 由"按下点到当前光标的位移"算出（不是光标绝对位置），
+            // 所以抓着手柄按下时不会跳；领先轴 1:1 贴合光标，另一轴按比例
+            // 跟随。上下限只取真实限制（纸张边界 / 检查器字号 12–72、
+            // 尺寸 24–160 / 换行宽下限），绝不按换行宽钳制——自动宽度文字的
+            // 换行宽接近纸宽，按它钳制会让手柄拖动一开始就冻住（本轮用户
+            // 报的"手柄不紧贴"主因）。
             guard let base = d.primary else { break }
-            let local = CGPoint(x: g.location.x - offset.x, y: g.location.y - offset.y)
-            let rect = elementRect(base, s: s)
-            let anchor = CGPoint(x: rect.minX, y: rect.minY)
-            let w0 = max(rect.width / s, 1)   // base 框宽（点）
-            let h0 = max(rect.height / s, 1)  // base 框高（点）
-            let dxDots = (local.x - anchor.x) / s
-            let dyDots = (local.y - anchor.y) / s
-            let ratio = max(0.2, min(5.0, max(dxDots / w0, dyDots / h0)))
-            switch base.kind {
-            case .text:
-                // 字号保持连续（不逐帧取整）→ 框连续贴合光标。换行宽按
-                // 字号的同一比例推导，宽/字号比例严格不变 → 断行稳定。
-                // 触到纸宽/字号上限时连 ratio 一起钳住：框停在极限处，
-                // 手柄不再脱离光标无限漂移。
-                let baseWrap = base.width > 0
-                    ? CGFloat(base.width)
-                    : CGFloat(base.wrapWidth(at: base.x, printableWidth: printableWidth))
-                let maxW = CGFloat(max(32, printableWidth - base.x))
-                let raw = max(dxDots / w0, dyDots / h0)
-                let upper = min(5.0, maxW / max(baseWrap, 1), 72 / base.fontSize)
-                let lower = max(12 / base.fontSize, 32 / max(baseWrap, 1))
-                let ratio = min(max(raw, lower), upper)
-                d.fontSize = base.fontSize * ratio
-                d.wrapWidth = Int(min(max(baseWrap * ratio, 32), maxW).rounded())
-            case .qr, .barcode:
-                d.size = Int(min(200, max(24, (CGFloat(base.size) * ratio).rounded())))
-            }
+            let (_, paperHeight) = LabelRenderer.contentSize(doc)
+            guard let preview = CanvasResize.preview(
+                base: base,
+                translation: CGSize(width: g.location.x - d.start.x,
+                                    height: g.location.y - d.start.y),
+                scale: s,
+                printableWidth: printableWidth,
+                paperHeight: paperHeight) else { break }
+            d.fontSize = preview.fontSize
+            d.size = preview.size
+            d.wrapWidth = preview.wrapWidth
         case .marquee:
             d.marquee = CGRect(x: min(d.start.x, g.location.x),
                                y: min(d.start.y, g.location.y),
@@ -604,15 +589,23 @@ struct LabelCanvas: View {
             guard let base = d.primary,
                   let idx = doc.elements.firstIndex(where: { $0.id == base.id }) else { return }
             var newDoc = doc
-            if let fs = d.fontSize, fs != base.fontSize {
+            var changed = false
+            // 位移映射在按下时 ratio 恰好为 1；用容差而不是 != 避免"点一下
+            // 手柄"就写入一个 ε 字号（会污染撤销栈）。
+            if let fs = d.fontSize, abs(fs - base.fontSize) > 0.01 {
                 newDoc.elements[idx].fontSize = fs
                 // 换行宽随字号一起提交（保持断行比例）；自动宽度借此物化。
                 if let w = d.wrapWidth { newDoc.elements[idx].width = w }
+                changed = true
             } else if base.width > 0, let w = d.wrapWidth, w != base.width {
                 newDoc.elements[idx].width = w
+                changed = true
             }
-            if let sz = d.size, sz != base.size { newDoc.elements[idx].size = sz }
-            if newDoc != doc { doc = newDoc }
+            if let sz = d.size, sz != base.size {
+                newDoc.elements[idx].size = sz
+                changed = true
+            }
+            if changed, newDoc != doc { doc = newDoc }
         case .marquee:
             let moved = d.marquee.map { hypot($0.width, $0.height) } ?? 0
             if moved < 3 {
