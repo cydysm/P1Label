@@ -154,9 +154,19 @@ struct LabelCanvas: View {
                     .frame(width: geo.size.width, height: geo.size.height)
                     .allowsHitTesting(false)
 
-                // Interactive controls pinned to the selection frame. Must sit
-                // ABOVE the gesture surface: a click on them has to reach the
-                // button, not start a paper drag.
+                // Single, static gesture surface (see file header). Must sit
+                // BELOW the interactive controls: a click on the delete button
+                // or the snap toggle has to reach the button, not start a
+                // paper drag (v1 ordering regression found in use).
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .gesture(paperGesture(s: s))
+                    .disabled(model.inlineEditingID != nil)
+
+                // Interactive controls pinned to the selection frame. ABOVE the
+                // gesture surface (v1 comment kept): clicks reach the button,
+                // everything else falls through to the paper drag.
                 selectionControls(s: s)
                     .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
 
@@ -178,7 +188,7 @@ struct LabelCanvas: View {
                     .allowsHitTesting(false)
                 }
 
-                // 吸附对齐开关（§6.6 右下角浮动按钮）。
+                // 吸附对齐开关（§6.6 右下角浮动按钮），同样要在手势面之上。
                 VStack {
                     Spacer()
                     HStack {
@@ -187,13 +197,6 @@ struct LabelCanvas: View {
                     }
                 }
                 .padding(12)
-
-                // Single, static gesture surface (see file header).
-                Color.clear
-                    .contentShape(Rectangle())
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .gesture(paperGesture(s: s))
-                    .disabled(model.inlineEditingID != nil)
             }
             .clipped()
             .background(FrameProbe { model.canvasScreenFrame = $0 })
@@ -405,9 +408,20 @@ struct LabelCanvas: View {
             drag = Drag(mode: .pan, start: point, bases: [:], primary: nil, panBase: offset)
             return
         }
+
+        // ① 主选中元素的缩放/换行宽手柄优先（§6.6）：手柄画在主选中框上，
+        //    只有已选中时才可见，命中即进入缩放拖拽（否则落到下面的移动逻辑）。
+        if let pid = primaryID,
+           let primary = doc.elements.first(where: { $0.id == pid }),
+           !primary.hidden,
+           let mode = handleMode(at: point, for: primary, s: s) {
+            drag = Drag(mode: mode, start: point, bases: [:], primary: primary)
+            return
+        }
+
         let paperPoint = CGPoint(x: point.x - offset.x, y: point.y - offset.y)
 
-        // Double-click on text → inline editing (§5.5).
+        // ② Double-click on text → inline editing (§5.5).
         let now = Date()
         if let last = lastClick,
            now.timeIntervalSince(last.time) < 0.4,
@@ -422,6 +436,7 @@ struct LabelCanvas: View {
         }
         lastClick = (now, point)
 
+        // ③ 元素命中 → 选择 / 移动；空白 → 框选（§5.1）。
         if let el = hitTest(paperPoint, s: s), !el.hidden {
             if selection.contains(el.id) {
                 if isShiftDown {
@@ -445,6 +460,36 @@ struct LabelCanvas: View {
             drag = Drag(mode: .marquee, start: point, bases: [:], primary: nil,
                         marquee: CGRect(origin: point, size: .zero))
         }
+    }
+
+    /// 手柄命中检测：主选中框 4 个角点（缩放）+ 文本左右边中点（换行宽）。
+    /// 手柄 8×8 视觉，命中半径放宽到 12pt 保持好抓。
+    private func handleMode(at point: CGPoint, for el: LabelElement, s: CGFloat) -> Mode? {
+        let rect = viewportRect(el, s: s, x: el.x, y: el.y,
+                                fontSize: el.fontSize, size: el.size, width: el.width)
+            .insetBy(dx: -2, dy: -2)   // 与 drawPrimaryHandles 的描边内缩一致
+        let hitRadius: CGFloat = 12
+        let corners: [(Corner, CGPoint)] = [
+            (.topLeft, CGPoint(x: rect.minX, y: rect.minY)),
+            (.topRight, CGPoint(x: rect.maxX, y: rect.minY)),
+            (.bottomLeft, CGPoint(x: rect.minX, y: rect.maxY)),
+            (.bottomRight, CGPoint(x: rect.maxX, y: rect.maxY)),
+        ]
+        for (corner, pos) in corners
+        where hypot(point.x - pos.x, point.y - pos.y) <= hitRadius {
+            return .resizeCorner(corner)
+        }
+        if el.kind == .text {
+            let mids: [(Edge, CGPoint)] = [
+                (.left, CGPoint(x: rect.minX, y: rect.midY)),
+                (.right, CGPoint(x: rect.maxX, y: rect.midY)),
+            ]
+            for (edge, pos) in mids
+            where hypot(point.x - pos.x, point.y - pos.y) <= hitRadius {
+                return .resizeEdge(edge)
+            }
+        }
+        return nil
     }
 
     private func setSelection(_ ids: Set<UUID>, primary: UUID?) {
