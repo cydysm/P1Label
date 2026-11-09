@@ -714,13 +714,13 @@ struct ContentView: View {
                 }
                 HStack(spacing: 8) {
                     rowLabel("类型", width: 58)
-                    MenuField(selection: $model.isDieCut,
+                    MenuField(selection: $model.doc.isDieCut,
                               options: [("模切标签（有间隙）", true), ("连续纸", false)])
                 }
-                if model.isDieCut {
+                if model.doc.isDieCut {
                     HStack(spacing: 8) {
                         rowLabel("间隙", width: 58)
-                        StepperField(value: $model.gapLenMM, range: 1...10, step: 0.5,
+                        StepperField(value: $model.doc.gapLenMM, range: 1...10, step: 0.5,
                                      format: formatMM1)
                     }
                 }
@@ -783,7 +783,7 @@ struct ContentView: View {
     // MARK: Right: info bar + canvas + status bar
 
     private var paperDescription: String {
-        model.isDieCut ? "模切标签 · 间隙 \(String(format: "%.1f", model.gapLenMM)) mm" : "连续纸"
+        model.doc.isDieCut ? "模切标签 · 间隙 \(String(format: "%.1f", model.doc.gapLenMM)) mm" : "连续纸"
     }
 
     private var canvasPane: some View {

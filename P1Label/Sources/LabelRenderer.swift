@@ -135,12 +135,42 @@ struct LabelDocument: Codable, Equatable {
     var presetID: String? = nil
     var widthMM: Double = 40
     var heightMM: Double = 30
+    /// Paper type + gap live in the document (not app state) so they survive
+    /// relaunch — printing with a stale type sends gap-feed commands to the
+    /// wrong paper and misprints on real hardware.
+    var isDieCut: Bool = true
+    var gapLenMM: Double = 3
     var marginTopMM: Double = 0
     var marginBottomMM: Double = 0
     var darkThreshold: UInt8 = 128
     var rasterWidth: Int = 384
     var leftPadDots: Int = 68
     var elements: [LabelElement] = LabelDocument.defaultElements()
+
+    enum CodingKeys: String, CodingKey {
+        case presetID, widthMM, heightMM, isDieCut, gapLenMM
+        case marginTopMM, marginBottomMM, darkThreshold, rasterWidth, leftPadDots, elements
+    }
+
+    init() {}
+
+    /// decodeIfPresent throughout: archives written before a field existed
+    /// fall back to the defaults above instead of failing the whole document.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        presetID = try c.decodeIfPresent(String.self, forKey: .presetID)
+        widthMM = try c.decodeIfPresent(Double.self, forKey: .widthMM) ?? 40
+        heightMM = try c.decodeIfPresent(Double.self, forKey: .heightMM) ?? 30
+        isDieCut = try c.decodeIfPresent(Bool.self, forKey: .isDieCut) ?? true
+        gapLenMM = try c.decodeIfPresent(Double.self, forKey: .gapLenMM) ?? 3
+        marginTopMM = try c.decodeIfPresent(Double.self, forKey: .marginTopMM) ?? 0
+        marginBottomMM = try c.decodeIfPresent(Double.self, forKey: .marginBottomMM) ?? 0
+        darkThreshold = try c.decodeIfPresent(UInt8.self, forKey: .darkThreshold) ?? 128
+        rasterWidth = try c.decodeIfPresent(Int.self, forKey: .rasterWidth) ?? 384
+        leftPadDots = try c.decodeIfPresent(Int.self, forKey: .leftPadDots) ?? 68
+        elements = try c.decodeIfPresent([LabelElement].self, forKey: .elements)
+                ?? LabelDocument.defaultElements()
+    }
 
     static let paperWidthDots = 384
 

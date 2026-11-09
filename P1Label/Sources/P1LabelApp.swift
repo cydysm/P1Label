@@ -51,8 +51,6 @@ final class PrintModel: ObservableObject {
     @Published var selectedElementID: UUID?
     @Published var copies = 1
     @Published var darkLevel = 8             // 1..16
-    @Published var isDieCut = true
-    @Published var gapLenMM = 3.0
     @Published var status = "未连接"
     @Published var connected = false
     @Published var connecting = false
@@ -83,7 +81,7 @@ final class PrintModel: ObservableObject {
         // exact hit), so the picker never mislabels hand-tuned settings.
         if doc.presetID == nil,
            let p = PaperPreset.matching(widthMM: doc.widthMM, heightMM: doc.heightMM,
-                                        isDieCut: isDieCut, gapLenMM: gapLenMM) {
+                                        isDieCut: doc.isDieCut, gapLenMM: doc.gapLenMM) {
             doc.presetID = p.id
         }
         // One-time migration: pull saved elements back inside the paper.
@@ -166,8 +164,8 @@ final class PrintModel: ObservableObject {
         doc.widthMM = p.widthMM
         doc.heightMM = p.heightMM
         doc.leftPadDots = p.leftPadDots
-        isDieCut = p.isDieCut
-        gapLenMM = p.gapLenMM
+        doc.isDieCut = p.isDieCut
+        doc.gapLenMM = p.gapLenMM
     }
 
     func connect() {
@@ -273,8 +271,8 @@ final class PrintModel: ObservableObject {
         let doc = self.doc
         let copies = max(self.copies, 1)
         let darkness = UInt8(min(max(darkLevel, 1), 16))
-        let gapType: UInt8 = isDieCut ? 2 : 0
-        let gapLen = Int(gapLenMM * 100)
+        let gapType: UInt8 = doc.isDieCut ? 2 : 0
+        let gapLen = Int(doc.gapLenMM * 100)
         let pageKey = Int.random(in: 0..<60000)
 
         Task.detached { [weak self] in

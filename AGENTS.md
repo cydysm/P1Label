@@ -16,6 +16,8 @@
 - `P1Label/Sources/PaperSizes.swift` — 纸张尺寸预设目录：每尺寸一条预设（宽/高/纸型/
   间隙/`leftPadDots` 标定/`hardwareVerified`）。适配新纸张 = 在此加一条预设 → 真机标定
   `leftPadDots` → 回填该条并置 `hardwareVerified: true`，UI/渲染/拖拽上限自动跟随。
+  纸型（`isDieCut`）与间隙（`gapLenMM`）的事实源在 `LabelDocument`、随文档持久化
+  （2026-11 审计修复：原先只在 PrintModel，重启丢失会按错误纸型实打）。
 - `tools/*.py` — 打印机硬件工具：`print_test.py` 是 LPAPI 协议的 Python 参考实现
   （`calib_test.py`/`offset_test.py` import 它的 `Printer` 类）；`calib_test.py` +
   `offset_test.py` = `leftPadDots` 真机标定（PaperSizes 适配新纸张流程用）；

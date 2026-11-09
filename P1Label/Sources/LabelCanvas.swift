@@ -52,8 +52,6 @@ struct LabelCanvas: View {
     @State private var pressStart: CGPoint?
     /// Live drag preview. Local state only — no document writes per frame.
     @State private var drag: Drag?
-    /// Element queued for deletion; the confirmation alert runs before it is
-    /// actually removed.
 
     enum Mode { case move, resize }
 
