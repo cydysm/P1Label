@@ -331,8 +331,10 @@ struct LabelCanvas: View {
             return (base.x + d.dx, base.y + d.dy, base.fontSize, base.size, base.width)
         case .resizeCorner:
             guard let base = d.primary, base.id == el.id else { return unchanged }
+            // wrapWidth 必须进入预览：文字缩放时换行宽随字号联动，漏掉它
+            // 框宽会钉在旧值上，手柄在拖动中脱离光标（用户实测）。
             return (base.x, base.y, d.fontSize ?? base.fontSize,
-                    d.size ?? base.size, base.width)
+                    d.size ?? base.size, d.wrapWidth ?? base.width)
         default:
             return unchanged
         }
@@ -550,11 +552,19 @@ struct LabelCanvas: View {
             let ratio = max(0.2, min(5.0, max(dxDots / w0, dyDots / h0)))
             switch base.kind {
             case .text:
-                d.fontSize = min(72, max(12, (base.fontSize * ratio).rounded()))
+                // 字号保持连续（不逐帧取整）→ 框连续贴合光标。换行宽按
+                // 字号的同一比例推导，宽/字号比例严格不变 → 断行稳定。
+                // 触到纸宽/字号上限时连 ratio 一起钳住：框停在极限处，
+                // 手柄不再脱离光标无限漂移。
                 let baseWrap = base.width > 0
                     ? CGFloat(base.width)
                     : CGFloat(base.wrapWidth(at: base.x, printableWidth: printableWidth))
                 let maxW = CGFloat(max(32, printableWidth - base.x))
+                let raw = max(dxDots / w0, dyDots / h0)
+                let upper = min(5.0, maxW / max(baseWrap, 1), 72 / base.fontSize)
+                let lower = max(12 / base.fontSize, 32 / max(baseWrap, 1))
+                let ratio = min(max(raw, lower), upper)
+                d.fontSize = base.fontSize * ratio
                 d.wrapWidth = Int(min(max(baseWrap * ratio, 32), maxW).rounded())
             case .qr, .barcode:
                 d.size = Int(min(200, max(24, (CGFloat(base.size) * ratio).rounded())))
