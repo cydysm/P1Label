@@ -81,14 +81,13 @@ struct LabelCanvas: View {
         case none
         case move
         case resizeCorner(Corner)
-        case resizeEdge(Edge)
         case marquee
         case pan
     }
 
-    enum Corner: Equatable { case topLeft, topRight, bottomLeft, bottomRight }
-    /// 文本元素左右边中点：拖拽调整换行宽（§6.6）。
-    enum Edge: Equatable { case left, right }
+    /// 缩放手柄只有右下角一个（§6.6：右上角由删除 × 占位，其余角点/边中点
+    /// 按用户要求去掉——换行宽走检查器选择器）。
+    enum Corner: Equatable { case bottomRight }
 
     struct Drag {
         var mode: Mode
@@ -103,9 +102,6 @@ struct LabelCanvas: View {
         var dy: Int = 0
         var fontSize: CGFloat?
         var size: Int?
-        var wrapWidth: Int?
-        /// 左边中点手柄拖拽时的暂定 x（右缘固定，左缘跟随光标）。
-        var pendingX: Int?
         /// Live marquee rect in viewport coordinates.
         var marquee: CGRect?
         /// Pan base offset (viewport coords of the paper at gesture start).
@@ -331,10 +327,10 @@ struct LabelCanvas: View {
         case .move:
             guard let base = d.bases[el.id] else { return unchanged }
             return (base.x + d.dx, base.y + d.dy, base.fontSize, base.size, base.width)
-        case .resizeCorner, .resizeEdge:
+        case .resizeCorner:
             guard let base = d.primary, base.id == el.id else { return unchanged }
-            return (d.pendingX ?? base.x, base.y, d.fontSize ?? base.fontSize,
-                    d.size ?? base.size, d.wrapWidth ?? base.width)
+            return (base.x, base.y, d.fontSize ?? base.fontSize,
+                    d.size ?? base.size, base.width)
         default:
             return unchanged
         }
@@ -347,7 +343,7 @@ struct LabelCanvas: View {
         switch d.mode {
         case .move:
             return doc.elements.filter { !$0.hidden && d.bases[$0.id] == nil }
-        case .resizeCorner, .resizeEdge:
+        case .resizeCorner:
             return doc.elements.filter { !$0.hidden && $0.id != d.primary?.id }
         default:
             return doc.elements.filter { !$0.hidden }
@@ -464,32 +460,15 @@ struct LabelCanvas: View {
         }
     }
 
-    /// 手柄命中检测：主选中框 4 个角点（缩放）+ 文本左右边中点（换行宽）。
-    /// 手柄 8×8 视觉，命中半径放宽到 12pt 保持好抓。
+    /// 手柄命中检测：主选中框右下角唯一缩放手柄（8×8 视觉，命中半径放宽
+    /// 到 14pt 保持好抓）。
     private func handleMode(at point: CGPoint, for el: LabelElement, s: CGFloat) -> Mode? {
         let rect = viewportRect(el, s: s, x: el.x, y: el.y,
                                 fontSize: el.fontSize, size: el.size, width: el.width)
             .insetBy(dx: -2, dy: -2)   // 与 drawPrimaryHandles 的描边内缩一致
-        let hitRadius: CGFloat = 12
-        let corners: [(Corner, CGPoint)] = [
-            (.topLeft, CGPoint(x: rect.minX, y: rect.minY)),
-            (.topRight, CGPoint(x: rect.maxX, y: rect.minY)),
-            (.bottomLeft, CGPoint(x: rect.minX, y: rect.maxY)),
-            (.bottomRight, CGPoint(x: rect.maxX, y: rect.maxY)),
-        ]
-        for (corner, pos) in corners
-        where hypot(point.x - pos.x, point.y - pos.y) <= hitRadius {
-            return .resizeCorner(corner)
-        }
-        if el.kind == .text {
-            let mids: [(Edge, CGPoint)] = [
-                (.left, CGPoint(x: rect.minX, y: rect.midY)),
-                (.right, CGPoint(x: rect.maxX, y: rect.midY)),
-            ]
-            for (edge, pos) in mids
-            where hypot(point.x - pos.x, point.y - pos.y) <= hitRadius {
-                return .resizeEdge(edge)
-            }
+        let handle = CGPoint(x: rect.maxX, y: rect.maxY)
+        if hypot(point.x - handle.x, point.y - handle.y) <= 14 {
+            return .resizeCorner(.bottomRight)
         }
         return nil
     }
@@ -548,17 +527,12 @@ struct LabelCanvas: View {
             }
             d.dx = dx
             d.dy = dy
-        case .resizeCorner(let corner):
+        case .resizeCorner:
+            // 右下角手柄：左上角为锚点，等比缩放字号/尺寸。
             guard let base = d.primary else { break }
             let local = CGPoint(x: g.location.x - offset.x, y: g.location.y - offset.y)
             let rect = elementRect(base, s: s)
-            let anchor: CGPoint
-            switch corner {
-            case .topLeft: anchor = CGPoint(x: rect.maxX, y: rect.maxY)
-            case .topRight: anchor = CGPoint(x: rect.minX, y: rect.maxY)
-            case .bottomLeft: anchor = CGPoint(x: rect.maxX, y: rect.minY)
-            case .bottomRight: anchor = CGPoint(x: rect.minX, y: rect.minY)
-            }
+            let anchor = CGPoint(x: rect.minX, y: rect.minY)
             let startLocal = CGPoint(x: d.start.x - offset.x, y: d.start.y - offset.y)
             let startDist = max(hypot(startLocal.x - anchor.x, startLocal.y - anchor.y), 8)
             let dist = max(hypot(local.x - anchor.x, local.y - anchor.y), 4)
@@ -568,22 +542,6 @@ struct LabelCanvas: View {
                 d.fontSize = min(72, max(12, (base.fontSize * ratio).rounded()))
             case .qr, .barcode:
                 d.size = Int(min(200, max(24, (CGFloat(base.size) * ratio).rounded())))
-            }
-        case .resizeEdge(let edge):
-            guard let base = d.primary, base.kind == .text else { break }
-            let local = CGPoint(x: g.location.x - offset.x, y: g.location.y - offset.y)
-            let rect = elementRect(base, s: s)   // paper-local points, base 的文本框
-            if edge == .right {
-                // 右手柄：左缘固定，宽度跟随光标。
-                let widthDots = Int(((local.x - rect.minX) / s).rounded())
-                let maxW = max(32, printableWidth - base.x)
-                d.wrapWidth = min(max(widthDots, 32), maxW)
-            } else {
-                // 左手柄：右缘固定，左缘（x）跟随光标，宽度 = 右缘 - 左缘。
-                let anchorDots = Int((rect.maxX / s).rounded())
-                let left = max(0, min(Int((local.x / s).rounded()), anchorDots - 32))
-                d.pendingX = left
-                d.wrapWidth = anchorDots - left
             }
         case .marquee:
             d.marquee = CGRect(x: min(d.start.x, g.location.x),
@@ -616,14 +574,12 @@ struct LabelCanvas: View {
                 newDoc.elements[idx].y = max(0, min(base.y + d.dy, maxY))
             }
             if newDoc != doc { doc = newDoc }
-        case .resizeCorner, .resizeEdge:
+        case .resizeCorner:
             guard let base = d.primary,
                   let idx = doc.elements.firstIndex(where: { $0.id == base.id }) else { return }
             var newDoc = doc
             if let fs = d.fontSize, fs != base.fontSize { newDoc.elements[idx].fontSize = fs }
             if let sz = d.size, sz != base.size { newDoc.elements[idx].size = sz }
-            if let nx = d.pendingX, nx != base.x { newDoc.elements[idx].x = nx }
-            if let w = d.wrapWidth, w != base.width { newDoc.elements[idx].width = w }
             if newDoc != doc { doc = newDoc }
         case .marquee:
             let moved = d.marquee.map { hypot($0.width, $0.height) } ?? 0
@@ -774,7 +730,7 @@ struct LabelCanvas: View {
                                            size: eff.size, width: eff.width, s: s,
                                            printableWidth: printableWidth, into: &ctx)
                 }
-            case .resizeCorner, .resizeEdge:
+            case .resizeCorner:
                 if let base = d.primary {
                     let eff = effective(base)
                     ElementsCanvas.drawOne(base, x: eff.x, y: eff.y, fontSize: eff.fontSize,
@@ -788,7 +744,7 @@ struct LabelCanvas: View {
     }
 
     /// Selection overlay in viewport coordinates: marquee, per-element boxes
-    /// (多选虚线 §6.6), primary handles, all unscaled by zoom.
+    /// (多选虚线 §6.6), primary box + 右下角缩放手柄, all unscaled by zoom.
     private func selectionOverlay(s: CGFloat) -> some View {
         Canvas { ctx, size in
             _ = size
@@ -806,7 +762,7 @@ struct LabelCanvas: View {
                                         fontSize: eff.fontSize, size: eff.size, width: eff.width)
                     .insetBy(dx: -2, dy: -2)
                 if id == primaryID {
-                    drawPrimaryHandles(rect, kind: el.kind, into: &ctx)
+                    drawPrimaryHandles(rect, into: &ctx)
                 } else {
                     ctx.stroke(Path(rect), with: .color(Design.accent),
                                style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
@@ -815,31 +771,15 @@ struct LabelCanvas: View {
         }
     }
 
-    /// Primary selection: accent frame + white corner handles (缩放 ×4) and
-    /// left/right edge midpoints for text (换行宽, §6.6).
-    private func drawPrimaryHandles(_ rect: CGRect, kind: LabelElement.Kind,
+    /// Primary selection: accent frame + 右下角唯一缩放手柄（v1 交互，用户
+    /// 指定；右上角由删除 × 占位，其余角点/边中点去掉）。
+    private func drawPrimaryHandles(_ rect: CGRect,
                                     into ctx: inout GraphicsContext) {
         ctx.stroke(Path(rect), with: .color(Design.accent), lineWidth: 1.2)
-        let corners = [rect.origin,
-                       CGPoint(x: rect.maxX, y: rect.minY),
-                       CGPoint(x: rect.minX, y: rect.maxY),
-                       CGPoint(x: rect.maxX, y: rect.maxY)]
-        for c in corners {
-            let handle = CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8)
-            let path = Path(roundedRect: handle, cornerRadius: 2)
-            ctx.fill(path, with: .color(.white))
-            ctx.stroke(path, with: .color(Design.accent), lineWidth: 1.2)
-        }
-        if kind == .text {
-            let mids = [CGPoint(x: rect.minX, y: rect.midY),
-                        CGPoint(x: rect.maxX, y: rect.midY)]
-            for m in mids {
-                let handle = CGRect(x: m.x - 3, y: m.y - 4, width: 6, height: 8)
-                let path = Path(roundedRect: handle, cornerRadius: 2)
-                ctx.fill(path, with: .color(.white))
-                ctx.stroke(path, with: .color(Design.accent), lineWidth: 1.2)
-            }
-        }
+        let handle = CGRect(x: rect.maxX - 6, y: rect.maxY - 6, width: 12, height: 12)
+        let path = Path(roundedRect: handle, cornerRadius: 2.5)
+        ctx.fill(path, with: .color(.white))
+        ctx.stroke(path, with: .color(Design.accent), lineWidth: 1.2)
     }
 
     // MARK: - Selection controls (delete button + inline editor)
@@ -998,13 +938,8 @@ private struct ElementsCanvas: View, Equatable {
             if let img = LabelRenderer.textPreviewImage(text: el.text, fontSize: fontSize,
                                                         bold: el.bold, width: wrapW,
                                                         pixelScale: bucket) {
-                // 框（rect）宽 = 设定换行宽，可宽于墨迹；位图按墨迹自然宽度
-                // 左上对齐绘制，避免水平拉伸。
-                let inkW = CGFloat(img.width) / bucket * s
-                let inkRect = CGRect(x: rect.minX, y: rect.minY,
-                                     width: min(rect.width, inkW), height: rect.height)
                 ctx.draw(Image(img, scale: bucket, orientation: .up, label: Text("文本")),
-                         in: inkRect)
+                         in: rect)
             }
         case .qr:
             if let cg = LabelRenderer.qrImage(text: el.text, size: size, pixelScale: 4,
