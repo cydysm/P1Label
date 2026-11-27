@@ -34,14 +34,97 @@ import AppKit
 /// 转发给 NSWindow.performDrag（真正的系统拖拽循环）。只覆盖顶部 chrome 两行，
 /// 画布手势面不受影响 —— isMovableByWindowBackground 会劫持画布拖拽（v1
 /// 已在真机验证过该坑，见 git 历史）。
+/// 当 `titleBarHeight` 非空时，同时将系统红绿灯垂直居中对齐到该高度的顶栏中。
 private struct WindowDragStrip: NSViewRepresentable {
+    var titleBarHeight: CGFloat? = nil
+
     final class StripView: NSView {
+        var titleBarHeight: CGFloat?
+        private var observers: [NSObjectProtocol] = []
+
+        deinit { removeObservers() }
+
         override func mouseDown(with event: NSEvent) {
             window?.performDrag(with: event)
         }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            removeObservers()
+            guard let window, titleBarHeight != nil else { return }
+            let nc = NotificationCenter.default
+            let names: [Notification.Name] = [
+                NSWindow.didResizeNotification,
+                NSWindow.didEndLiveResizeNotification,
+                NSWindow.didExitFullScreenNotification,
+                NSWindow.didBecomeKeyNotification
+            ]
+            for name in names {
+                observers.append(nc.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    self?.alignTrafficLights()
+                })
+            }
+            alignTrafficLights()
+            DispatchQueue.main.async { [weak self] in self?.alignTrafficLights() }
+        }
+
+        override func layout() {
+            super.layout()
+            alignTrafficLights()
+        }
+
+        private func removeObservers() {
+            for obs in observers { NotificationCenter.default.removeObserver(obs) }
+            observers.removeAll()
+        }
+
+        private func alignTrafficLights() {
+            guard let height = titleBarHeight,
+                  let window,
+                  !window.styleMask.contains(.fullScreen) else { return }
+            let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
+                .compactMap { window.standardWindowButton($0) }
+            guard buttons.count == 3,
+                  let titlebarView = buttons[0].superview,
+                  let container = titlebarView.superview,
+                  let themeFrame = container.superview else { return }
+
+            let targetContainer = NSRect(
+                x: container.frame.origin.x,
+                y: themeFrame.bounds.height - height,
+                width: themeFrame.bounds.width,
+                height: height
+            )
+            if container.frame != targetContainer {
+                container.frame = targetContainer
+            }
+            if titlebarView.frame != container.bounds {
+                titlebarView.frame = container.bounds
+            }
+
+            let leftInset: CGFloat = 16
+            let spacing: CGFloat = 20
+            for (i, btn) in buttons.enumerated() {
+                let target = NSPoint(
+                    x: leftInset + CGFloat(i) * spacing,
+                    y: round((titlebarView.bounds.height - btn.frame.height) / 2)
+                )
+                if btn.frame.origin != target {
+                    btn.setFrameOrigin(target)
+                }
+            }
+        }
     }
-    func makeNSView(context: Context) -> NSView { StripView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    func makeNSView(context: Context) -> StripView {
+        let v = StripView()
+        v.titleBarHeight = titleBarHeight
+        return v
+    }
+
+    func updateNSView(_ nsView: StripView, context: Context) {
+        nsView.titleBarHeight = titleBarHeight
+    }
 }
 
 // MARK: - Popover plumbing
@@ -221,8 +304,9 @@ struct ContentView: View {
 
     private var titleRow: some View {
         HStack(spacing: 12) {
-            // 系统红绿灯落在窗口左上角原生位置；顶栏左侧留 70pt 空位（§6.1）。
-            Spacer().frame(width: 70)
+            // 系统红绿灯由 WindowDragStrip 垂直居中在 48pt 顶栏左侧（右缘 x=70）；
+            // 留出 64pt 空位（加左侧 12pt padding 与 12pt spacing，标题从 x=88 起）。
+            Spacer().frame(width: 64)
             Text("P1Label")
                 .font(.designTitle)
                 .foregroundStyle(Design.textPrimary)
@@ -240,7 +324,7 @@ struct ContentView: View {
         .padding(.leading, 12)
         .frame(height: 48)
         .background(Design.bgSidebar)
-        .background(WindowDragStrip())
+        .background(WindowDragStrip(titleBarHeight: 48))
     }
 
     private var paperButton: some View {
