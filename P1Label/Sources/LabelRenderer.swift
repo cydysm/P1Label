@@ -47,13 +47,21 @@ struct LabelElement: Identifiable, Equatable, Codable {
     var bold: Bool = false
     var size: Int = 96           // QR side / barcode height in dots
     var width: Int = 0           // text wrap width in dots; 0 = to paper edge
+    /// 图层显隐（设计规格 v2 §5.6）：隐藏元素不参与打印与命中测试。
+    var hidden: Bool = false
+    /// 二维码纠错等级 L/M/Q/H（渲染侧参数，不动协议）；nil = 默认 M。
+    var errorCorrection: String? = nil
 
-    enum CodingKeys: String, CodingKey { case id, kind, x, y, text, fontSize, bold, size, width }
+    enum CodingKeys: String, CodingKey {
+        case id, kind, x, y, text, fontSize, bold, size, width, hidden, errorCorrection
+    }
 
     init(kind: Kind, x: Int = 4, y: Int = 4, text: String = "", fontSize: CGFloat = 24,
-         bold: Bool = false, size: Int = 96, width: Int = 0) {
+         bold: Bool = false, size: Int = 96, width: Int = 0,
+         hidden: Bool = false, errorCorrection: String? = nil) {
         self.kind = kind; self.x = x; self.y = y; self.text = text
         self.fontSize = fontSize; self.bold = bold; self.size = size; self.width = width
+        self.hidden = hidden; self.errorCorrection = errorCorrection
     }
 
     init(from decoder: Decoder) throws {
@@ -67,6 +75,8 @@ struct LabelElement: Identifiable, Equatable, Codable {
         bold = try c.decodeIfPresent(Bool.self, forKey: .bold) ?? false
         size = try c.decodeIfPresent(Int.self, forKey: .size) ?? 96
         width = try c.decodeIfPresent(Int.self, forKey: .width) ?? 0
+        hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
+        errorCorrection = try c.decodeIfPresent(String.self, forKey: .errorCorrection)
     }
 
     // printableWidth defaults to the full head width (legacy behavior); callers
@@ -96,33 +106,39 @@ struct LabelElement: Identifiable, Equatable, Codable {
         wrapWidth(at: x, printableWidth: printableWidth)
     }
 
-    func wrapWidth(at xPos: Int, printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
-        if width > 0 { return width }
+    func wrapWidth(at xPos: Int, width overrideWidth: Int? = nil,
+                   printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
+        let w = overrideWidth ?? width
+        if w > 0 { return w }
         // bucket auto width to 16-dot steps: x changes every frame while dragging,
         // and an exact width would defeat the CoreText measurement cache
         let raw = max(32, printableWidth - xPos - 8)
         return max(32, (raw / 16) * 16)
     }
 
-    // Preview-aware display helpers (used by the canvas during live drags)
-    func displayWidth(fontSize: CGFloat, size: Int, x xPos: Int,
+    // Preview-aware display helpers (used by the canvas during live drags).
+    // `width` overrides the stored wrap width so an in-flight edge-handle drag
+    // previews its pending value without touching the document.
+    func displayWidth(fontSize: CGFloat, size: Int, x xPos: Int, width: Int? = nil,
                       printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
         switch kind {
         case .qr: return size
         case .barcode: return LabelRenderer.barcodeWidth(text: text, height: size)
         case .text:
-            let w = wrapWidth(at: xPos, printableWidth: printableWidth)
+            let w = wrapWidth(at: xPos, width: width, printableWidth: printableWidth)
+            // 框宽贴合墨迹（v1 行为）：换行宽只影响排版，不撑大选区。
             return min(w, LabelRenderer.measureText(text: text, fontSize: fontSize, bold: bold, width: w).1)
         }
     }
 
-    func displayHeight(fontSize: CGFloat, size: Int, x xPos: Int,
+    func displayHeight(fontSize: CGFloat, size: Int, x xPos: Int, width: Int? = nil,
                        printableWidth: Int = LabelDocument.paperWidthDots) -> Int {
         switch kind {
         case .qr, .barcode: return size
         case .text:
             return LabelRenderer.measureText(text: text, fontSize: fontSize, bold: bold,
-                                             width: wrapWidth(at: xPos, printableWidth: printableWidth)).0
+                                             width: wrapWidth(at: xPos, width: width,
+                                                              printableWidth: printableWidth)).0
         }
     }
 }
@@ -135,12 +151,42 @@ struct LabelDocument: Codable, Equatable {
     var presetID: String? = nil
     var widthMM: Double = 40
     var heightMM: Double = 30
+    /// Paper type + gap live in the document (not app state) so they survive
+    /// relaunch — printing with a stale type sends gap-feed commands to the
+    /// wrong paper and misprints on real hardware.
+    var isDieCut: Bool = true
+    var gapLenMM: Double = 3
     var marginTopMM: Double = 0
     var marginBottomMM: Double = 0
     var darkThreshold: UInt8 = 128
     var rasterWidth: Int = 384
     var leftPadDots: Int = 68
     var elements: [LabelElement] = LabelDocument.defaultElements()
+
+    enum CodingKeys: String, CodingKey {
+        case presetID, widthMM, heightMM, isDieCut, gapLenMM
+        case marginTopMM, marginBottomMM, darkThreshold, rasterWidth, leftPadDots, elements
+    }
+
+    init() {}
+
+    /// decodeIfPresent throughout: archives written before a field existed
+    /// fall back to the defaults above instead of failing the whole document.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        presetID = try c.decodeIfPresent(String.self, forKey: .presetID)
+        widthMM = try c.decodeIfPresent(Double.self, forKey: .widthMM) ?? 40
+        heightMM = try c.decodeIfPresent(Double.self, forKey: .heightMM) ?? 30
+        isDieCut = try c.decodeIfPresent(Bool.self, forKey: .isDieCut) ?? true
+        gapLenMM = try c.decodeIfPresent(Double.self, forKey: .gapLenMM) ?? 3
+        marginTopMM = try c.decodeIfPresent(Double.self, forKey: .marginTopMM) ?? 0
+        marginBottomMM = try c.decodeIfPresent(Double.self, forKey: .marginBottomMM) ?? 0
+        darkThreshold = try c.decodeIfPresent(UInt8.self, forKey: .darkThreshold) ?? 128
+        rasterWidth = try c.decodeIfPresent(Int.self, forKey: .rasterWidth) ?? 384
+        leftPadDots = try c.decodeIfPresent(Int.self, forKey: .leftPadDots) ?? 68
+        elements = try c.decodeIfPresent([LabelElement].self, forKey: .elements)
+                ?? LabelDocument.defaultElements()
+    }
 
     static let paperWidthDots = 384
 
@@ -160,15 +206,18 @@ enum LabelRenderer {
     // MARK: Measurement / image caches (dragging re-renders every frame)
     private static let cacheLock = NSLock()
     private static var textCache: [String: (h: Int, w: Int)] = [:]
+    private static var textPreviewCache: [String: CGImage?] = [:]
     private static var barWCache: [String: Int] = [:]
     private static var qrImageCache: [String: CGImage?] = [:]
     private static var barcodeImageCache: [String: CGImage?] = [:]
 
     private static func trimCaches() {
         guard textCache.count > 256 || barWCache.count > 256
-                || qrImageCache.count > 128 || barcodeImageCache.count > 128 else { return }
+                || qrImageCache.count > 128 || barcodeImageCache.count > 128
+                || textPreviewCache.count > 128 else { return }
         textCache.removeAll(); barWCache.removeAll()
         qrImageCache.removeAll(); barcodeImageCache.removeAll()
+        textPreviewCache.removeAll()
     }
 
     static let rightInsetDots = 12  // raster 372..383 is off-paper (head margin), calibrated
@@ -198,7 +247,7 @@ enum LabelRenderer {
         ctx.setFillColor(gray: 1.0, alpha: 1.0)
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
 
-        for el in doc.elements {
+        for el in doc.elements where !el.hidden {
             let ew = el.dotsWidth(printableWidth: printable)
             let eh = el.dotsHeight(printableWidth: printable)
             // element top-left (el.x, el.y) in top-down dots → CG bottom-left rect
@@ -208,7 +257,7 @@ enum LabelRenderer {
             case .text:
                 drawText(el, in: rect, ctx: ctx)
             case .qr:
-                if let qr = qrImage(text: el.text, size: el.size) {
+                if let qr = qrImage(text: el.text, size: el.size, correction: el.errorCorrection) {
                     ctx.draw(qr, in: rect)
                 }
             case .barcode:
@@ -268,6 +317,47 @@ enum LabelRenderer {
         ctx.restoreGState()
     }
 
+    /// Canvas-preview text rendered by the SAME CoreText framesetter pipeline
+    /// as the print raster (design spec v2 §6.5, G4 "预览=打印"). SwiftUI Text
+    /// breaks lines differently for CJK long copy — this replaces it.
+    ///
+    /// Returns a transparent-backed black-on-clear bitmap of `width`-dot
+    /// wrapped text at `pixelScale` px/dot. `pixelScale` is bucketed by the
+    /// caller so zooming doesn't thrash the cache.
+    static func textPreviewImage(text: String, fontSize: CGFloat, bold: Bool,
+                                 width: Int, pixelScale: CGFloat) -> CGImage? {
+        guard !text.isEmpty, width > 0, pixelScale > 0 else { return nil }
+        cacheLock.lock()
+        let key = "\(text)|\(fontSize)|\(bold)|\(width)|\(pixelScale)"
+        if let hit = textPreviewCache[key] { cacheLock.unlock(); return hit }
+        cacheLock.unlock()
+
+        let el = LabelElement(kind: .text, text: text, fontSize: fontSize, bold: bold, width: width)
+        let (hDots, wDots) = measureText(text: text, fontSize: fontSize, bold: bold, width: width)
+        guard wDots > 0, hDots > 0 else { return nil }
+        let pw = max(1, Int((CGFloat(wDots) * pixelScale).rounded(.up)))
+        let ph = max(1, Int((CGFloat(hDots) * pixelScale).rounded(.up)))
+        guard let ctx = CGContext(data: nil, width: pw, height: ph, bitsPerComponent: 8,
+                                  bytesPerRow: pw * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        // Same layout as drawText: frame width = the measured used width, path
+        // grows 2000 dots past the top so nothing clips. CGBitmapContext is
+        // bottom-left origin — CTFrameDraw needs no flipping here (mirrors the
+        // print raster exactly).
+        ctx.scaleBy(x: pixelScale, y: pixelScale)
+        let attr = attributedText(el)
+        let framesetter = CTFramesetterCreateWithAttributedString(attr)
+        let path = CGPath(rect: CGRect(x: 0, y: -2000, width: CGFloat(wDots),
+                                       height: CGFloat(hDots) + 2000), transform: nil)
+        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: attr.length), path, nil)
+        CTFrameDraw(frame, ctx)
+        guard let img = ctx.makeImage() else { return nil }
+
+        cacheLock.lock(); textPreviewCache[key] = img; trimCaches(); cacheLock.unlock()
+        return img
+    }
+
     // MARK: Raster + page encoding
 
     /// Threshold grayscale into 1-bit raster rows (MSB first, 1 = black),
@@ -319,20 +409,22 @@ enum LabelRenderer {
     /// `pixelScale` > 1 renders a hi-res source for the canvas preview (the
     /// 1× default keeps the print raster byte-identical), and converts the
     /// output to black-on-clear so elements stack without an opaque white box.
-    static func qrImage(text: String, size: Int, pixelScale: CGFloat = 1) -> CGImage? {
+    static func qrImage(text: String, size: Int, pixelScale: CGFloat = 1,
+                        correction: String? = nil) -> CGImage? {
         guard !text.isEmpty else { return nil }
+        let level = correction?.uppercased() ?? "M"
         cacheLock.lock()
-        if let hit = qrImageCache["\(text)|\(size)|\(pixelScale)"] { cacheLock.unlock(); return hit }
+        if let hit = qrImageCache["\(text)|\(size)|\(pixelScale)|\(level)"] { cacheLock.unlock(); return hit }
         cacheLock.unlock()
         guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
         filter.setValue(Data(text.utf8), forKey: "inputMessage")
-        filter.setValue("M", forKey: "inputCorrectionLevel")
+        filter.setValue(level, forKey: "inputCorrectionLevel")
         guard let out = filter.outputImage,
               var img = ciToCG(out, size: CGSize(width: size, height: size), pixelScale: pixelScale) else {
             return nil
         }
         if pixelScale > 1 { img = Self.blackOnClear(img) ?? img }
-        cacheLock.lock(); qrImageCache["\(text)|\(size)|\(pixelScale)"] = img; trimCaches(); cacheLock.unlock()
+        cacheLock.lock(); qrImageCache["\(text)|\(size)|\(pixelScale)|\(level)"] = img; trimCaches(); cacheLock.unlock()
         return img
     }
 

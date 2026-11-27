@@ -5,6 +5,24 @@
 ## 架构速查
 
 - `P1Label/Sources/LabelCanvas.swift` — 交互画布。文件头注释解释了拖拽机制，**改拖拽相关代码前必读**。
+  v2（2026-11）起新增：多选框选、画布内联文本编辑、滚轮/⌘滚轮/空格平移缩放（§5.7），
+  全部折叠进同一个静态手势面。整体文档写经 `doc` binding（ContentView 侧接
+  `PrintModel.applyCanvasWrite` 入撤销栈）；选择状态走 `selection`/`primaryID` 两个 binding。
+- `P1Label/Sources/CanvasResize.swift` — 右下角缩放手柄的纯几何映射（不依赖 SwiftUI，
+  可单独和 `LabelRenderer.swift` 一起编译成探针/harness 验证）。手柄跟手相关的改动先读
+  文件头注释与坑 4。
+- `P1Label/Sources/DesignSystem.swift` — 设计 token v2（docs/design-spec-v2.md §3.2）与
+  共享控件（StepperField/PickerField/PositionField/PillButton/IconButton/ZoomStepper）。
+  取色一律走 `Design.*`，新代码禁止裸 `Color(red:green:blue:)`。
+- `P1Label/Sources/Inspector.swift` — 右栏属性检查器（无选择=文档概要+份数/浓度，
+  单选=元素属性，多选=对齐/分布/删除，底部=图层列表+打印按钮）。
+- `P1Label/Sources/History.swift` — 快照式撤销/重做栈（v2 §5.3）。文档写入必须收敛到
+  `PrintModel.mutate`（离散修改）或 `editText`（连续击键/滑杆合并为一条撤销）；
+  画布手势经 `applyCanvasWrite`。绕过这些入口的写入不会进撤销栈。
+- `P1Label/Sources/MainWindow.swift` — 主窗口骨架：48pt 顶栏 + 44pt 工具栏 + 画布区 +
+  280(240–340)pt 检查器 + 32pt 状态条；设备/纸张配置在 308pt popover 卡片。
+  系统红绿灯 + `WindowDragStrip`（仅顶栏转发 performDrag，勿开
+  `isMovableByWindowBackground`——会劫持画布拖拽）。
 - `P1Label/Sources/LPAPI.swift` — 打印协议编码（逆向自 Detong lpapi-ble-uni SDK）。
 - `P1Label/Sources/P1USB.swift` — libusb 传输。`sendPage` 的盲发节奏是对硬件验证过的设计，勿改。
 - `P1Label/Sources/P1BLE.swift` — CoreBluetooth 蓝牙传输（2026-11 真机验证通过），与 P1USB
@@ -16,6 +34,8 @@
 - `P1Label/Sources/PaperSizes.swift` — 纸张尺寸预设目录：每尺寸一条预设（宽/高/纸型/
   间隙/`leftPadDots` 标定/`hardwareVerified`）。适配新纸张 = 在此加一条预设 → 真机标定
   `leftPadDots` → 回填该条并置 `hardwareVerified: true`，UI/渲染/拖拽上限自动跟随。
+  纸型（`isDieCut`）与间隙（`gapLenMM`）的事实源在 `LabelDocument`、随文档持久化
+  （2026-11 审计修复：原先只在 PrintModel，重启丢失会按错误纸型实打）。
 - `tools/*.py` — 打印机硬件工具：`print_test.py` 是 LPAPI 协议的 Python 参考实现
   （`calib_test.py`/`offset_test.py` import 它的 `Printer` 类）；`calib_test.py` +
   `offset_test.py` = `leftPadDots` 真机标定（PaperSizes 适配新纸张流程用）；
@@ -31,6 +51,10 @@
   python3（homebrew，非 /usr/bin/python3），PNG 回退模式下结果打印到 stdout。
   注意：2026-11 起画布新增吸附对齐（`LabelCanvas.snapped`），拖拽轨迹靠近对齐线时
   元素位移会被吸附修正——重跑 harness 与历史基准对比前先考虑这一影响。
+  另：v2 UI 重构后 `LabelCanvas` 签名变为
+  `LabelCanvas(model:doc:selection:primaryID:scale:spacePanning:snapEnabled:)`；
+  harness 目录内的冻结源码副本（baseline_src/multi_src/src_instr）不受影响，
+  但要对最新代码重跑需先适配 HarnessMain 的调用与 PrintModel。
 
 ## 已踩过的坑（勿重蹈）
 
@@ -66,6 +90,40 @@
 
 画布预览 = SwiftUI `Text`，打印 = CoreText（`measureText`）。换行点极端情况（CJK 长文）
 可能有差异。若用户报"打出来的和预览不一样"，先查这里。
+
+### 4. 角手柄缩放不跟手：查钳制量 + 渲染尺寸非线性（2026-11 用户三次报修）
+
+症状：拖右下角缩放手柄，鼠标与手柄不紧贴。修复过程见 `CanvasResize.swift` 头注释，
+要点按排查顺序：
+
+1. **钳制上限必须按"已渲染框"（`displayWidth/Height`）到纸边的余量算，不能用换行宽。**
+   自动宽度文字的换行宽 ≈ 纸宽（如 288/298 dots），按它钳制 = 只能放大 3.5%，
+   手柄一拖动就冻在框角——用户看到的主因。真实上限只有：纸右/下边、字号 12–72、
+   尺寸 24–160、换行宽下限 32。
+2. **映射用"按下点 → 当前光标的位移"，不要用光标绝对位置/到锚点距离。**
+   位移映射在按下瞬间 ratio=1（无跳变），领先轴 1:1 跟手；绝对位置会吃掉抓取偏移
+   （按下手柄时框跳一下），距离映射则斜向只沿对角线走（旧版实测：横拖时手柄
+   每 120pt 飘 30pt）。
+3. **文本渲染尺寸对字号不是严格线性**：SF Pro 光学字号，30→72 dots 实测墨迹宽比
+   线性小约 2.3%；QR/条码还有整数 dot 量化。只按 ratio 缩字号，长文本拖到框宽
+   200+ dots 时手柄落后光标可达 10pt 以上。正确做法是"测量空间"求解：量出候选框，
+   按 目标/实测 修正 2–4 次并取误差最小的候选（见 `CanvasResize.preview`）。
+4. **等比缩放的语义边界**：只有一个角手柄且等比缩放时，手柄只能在一个轴（领先轴）
+   与光标重合，另一轴必然按比例跟随；领先轴按 max(Δx/框宽, Δy/框高) 选（相对位移
+   更大的轴）。用绝对位移选会在拖拽方向跨 45° 时跳变。别试图让两轴都精确贴光标——
+   那需要非等比缩放，文字会变形、二维码会坏。
+5. **换行文本要保断行**：字号与换行宽同比缩放；换行宽上限卡纸宽（否则提交时被钳制 →
+   断行变化、框高跳），下限 32（低于下限会重排）。墨迹受限（不换行）的文本允许
+   换行宽超纸宽，但提交时钳到纸宽，并让墨迹 ≤ 纸宽−2，避开"墨迹=换行宽"的临界重排。
+6. **提交带容差**（`abs(fs - base) > 0.01`）：否则"点一下手柄"就写入 ε 字号，污染撤销栈。
+
+验证方法（不必重跑截图 harness）：`CanvasResize.swift` 不依赖 SwiftUI，和
+`LabelRenderer.swift` 一起用 swiftc 编成探针，给定按下点/位移逐帧算"手柄中心 − 光标"；
+再把 harness 里包一层 NSHostingView + `NSApp.postEvent` 合成拖拽即可实测真实手势链路。
+2026-11 实测（默认 "HELLO P1" 文本，s=2）：修复前放大 3.5% 后手柄完全不动；修复后
+横拖领先轴误差 0.0pt、斜拖 ≤2pt（1 dot 量化），纸边处停住。注意：本机 GUI harness
+运行时若用户同时动鼠标，真实事件会混入合成拖拽（表现为 fractional cursor 坐标），
+以整数坐标的干净 run 为准。
 
 ## 修改纪律
 

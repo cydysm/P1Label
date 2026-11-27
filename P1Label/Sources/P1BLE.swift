@@ -92,6 +92,7 @@ final class P1BLE: NSObject, P1Transport {
     private var writeChar: CBCharacteristic?
     private var notifyChar: CBCharacteristic?
     private var writeType: CBCharacteristicWriteType = .withResponse
+    private static let queueKey = DispatchSpecificKey<UInt8>()
     private let queue = DispatchQueue(label: "P1BLE.transport")
     private let rxLock = NSLock()
     private var rxBuffer: [UInt8] = []
@@ -126,6 +127,7 @@ final class P1BLE: NSObject, P1Transport {
 
     override init() {
         super.init()
+        queue.setSpecific(key: Self.queueKey, value: 1)
     }
 
     deinit { close() }
@@ -165,9 +167,10 @@ final class P1BLE: NSObject, P1Transport {
     }
 
     func close() {
-        queue.async { [weak self] in
-            guard let self else { return }
-            self.teardown()
+        if DispatchQueue.getSpecific(key: Self.queueKey) != nil {
+            teardown()
+        } else {
+            queue.sync { self.teardown() }
         }
     }
 
@@ -175,7 +178,10 @@ final class P1BLE: NSObject, P1Transport {
         isOpen = false
         writeChar = nil
         notifyChar = nil
-        writeAckSem = nil
+        if let sem = writeAckSem {
+            writeAckSem = nil
+            sem.signal()
+        }
         connectTarget = nil
         if let p = peripheral {
             p.delegate = nil
@@ -470,7 +476,13 @@ final class P1BLE: NSObject, P1Transport {
         queue.sync { writeAckSem = sem }
         p.writeValue(Data(chunk), for: wc, type: .withResponse)
         let outcome = sem.wait(timeout: .now() + .milliseconds(timeoutMS))
-        queue.sync { if writeAckSem === sem { writeAckSem = nil } }
+        let stillConnected: Bool = queue.sync {
+            if writeAckSem === sem { writeAckSem = nil }
+            return peripheral != nil && writeChar != nil
+        }
+        if !stillConnected {
+            throw BLEError.connectFailed("蓝牙连接已断开")
+        }
         if outcome == .timedOut {
             throw BLEError.noResponse
         }
