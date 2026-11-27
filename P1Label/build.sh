@@ -107,4 +107,7 @@ SIZES
 fi
 
 codesign --force -s - "$APP"
+# Touch the .app bundle so Finder / LaunchServices invalidates its icon cache
+# after AppIcon.icns and Info.plist are updated in place.
+touch "$APP"
 echo "Built: $APP"
