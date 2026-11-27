@@ -145,6 +145,7 @@ struct ContentView: View {
     @State private var anchorFrames: [String: CGRect] = [:]
     @AppStorage("P1Label.inspectorWidth") private var inspectorWidth: Double = 280
     @State private var dividerBase: Double?
+    @State private var hoveringDivider = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -342,15 +343,28 @@ struct ContentView: View {
                 .frame(width: 10)
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 1)
+                    DragGesture(minimumDistance: 1, coordinateSpace: .global)
                         .onChanged { g in
-                            if dividerBase == nil { dividerBase = inspectorWidth }
-                            inspectorWidth = min(340, max(240, dividerBase! - g.translation.width))
+                            let base = dividerBase ?? inspectorWidth
+                            if dividerBase == nil { dividerBase = base }
+                            inspectorWidth = min(340, max(240, base - g.translation.width))
                         }
                         .onEnded { _ in dividerBase = nil }
                 )
                 .onHover { hovering in
-                    if hovering { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                    if hovering && !hoveringDivider {
+                        hoveringDivider = true
+                        NSCursor.resizeLeftRight.push()
+                    } else if !hovering && hoveringDivider {
+                        hoveringDivider = false
+                        NSCursor.pop()
+                    }
+                }
+                .onDisappear {
+                    if hoveringDivider {
+                        hoveringDivider = false
+                        NSCursor.pop()
+                    }
                 }
         }
         .frame(width: 9)

@@ -618,9 +618,9 @@ final class PrintModel: ObservableObject {
 
     enum EditCommand { case undo, redo, copy, paste, duplicate, selectAll }
 
-    /// ⌘编辑命令：文本框聚焦时让位给系统 responder 链（复制出输入框内容）。
+    /// ⌘编辑命令：文本框（含多行 TextEditor）聚焦时让位给系统 responder 链。
     func editCommand(_ cmd: EditCommand) {
-        if let tv = NSApp.keyWindow?.firstResponder as? NSTextView, tv.isFieldEditor {
+        if let tv = NSApp.keyWindow?.firstResponder as? NSTextView {
             switch cmd {
             case .undo: tv.undoManager?.undo()
             case .redo: tv.undoManager?.redo()
@@ -645,6 +645,7 @@ final class PrintModel: ObservableObject {
 
     private var keyMonitor: Any?
     private var scrollMonitor: Any?
+    private var resignObserver: NSObjectProtocol?
     /// Canvas viewport frame in screen coords (updated by LabelCanvas 的
     /// FrameProbe)；⌘滚轮/滚轮平移命中判定用。
     var canvasScreenFrame: CGRect?
@@ -661,12 +662,19 @@ final class PrintModel: ObservableObject {
             guard let self else { return event }
             return MainActor.assumeIsolated { self.handleScrollEvent(event) }
         }
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                if self?.spacePanning == true { self?.spacePanning = false }
+            }
+        }
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
         guard let window = event.window, window == NSApp.keyWindow else { return event }
-        // Text fields (inspector, inline canvas editor) keep their own keys.
-        if let tv = window.firstResponder as? NSTextView, tv.isFieldEditor {
+        // Text fields (inspector TextField/TextEditor, inline canvas editor) keep their own keys.
+        if window.firstResponder is NSTextView {
             // 画布内联编辑中 Esc 取消（§5.5）。
             if inlineEditingID != nil, event.type == .keyDown, event.keyCode == 53 {
                 endInlineEdit(commit: nil)
@@ -675,7 +683,10 @@ final class PrintModel: ObservableObject {
             return event
         }
         guard event.type == .keyDown else {
-            if event.keyCode == 49 { return nil }   // space keyUp swallowed
+            if event.keyCode == 49 {
+                if spacePanning { spacePanning = false }
+                return nil
+            }
             return event
         }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -691,7 +702,7 @@ final class PrintModel: ObservableObject {
         case 48: tabCycle(backwards: flags.contains(.shift)); return nil  // Tab
         case 36, 76: beginInlineEdit(); return nil             // Enter / keypad Enter
         case 49:                                               // Space → pan
-            spacePanning = true
+            if !spacePanning { spacePanning = true }
             return nil
         default:
             return event
@@ -814,15 +825,20 @@ final class PrintModel: ObservableObject {
             objectWillChange.send()   // snap the picker back to the active mode
             return
         }
+        let old = mode
+        mode = m
+        UserDefaults.standard.set(m.rawValue, forKey: modeKey)
+        connecting = true
+        connected = false
+        deviceSummary = ""
+        status = "切换中…"
         bleDevices = []
         Task.detached { [weak self] in
             guard let self else { return }
-            let (old, usb, ble) = await MainActor.run { (self.mode, self.usb, self.ble) }
+            let (usb, ble) = await MainActor.run { (self.usb, self.ble) }
             if old == .usb { usb.close() } else { ble.close() }
             await MainActor.run {
-                self.mode = m
-                self.connected = false
-                self.deviceSummary = ""
+                self.connecting = false
                 self.status = "未连接"
                 self.connect()
             }

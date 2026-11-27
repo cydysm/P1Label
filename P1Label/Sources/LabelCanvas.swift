@@ -232,8 +232,8 @@ struct LabelCanvas: View {
                 guard let el = doc.elements.first(where: { $0.id == id }) else { return }
                 let rect = elementRect(el, s: s)
                 let target = CGPoint(
-                    x: offset.x + rect.midX - geo.size.width / 2,
-                    y: offset.y + rect.midY - geo.size.height / 2)
+                    x: geo.size.width / 2 - rect.midX,
+                    y: geo.size.height / 2 - rect.midY)
                 withAnimation(.easeOut(duration: 0.2)) {
                     offset = clampedOffset(target, paperW: paperW, paperH: paperH, viewport: geo.size)
                 }
@@ -625,7 +625,7 @@ struct LabelCanvas: View {
                 height: viewportMarquee.height / s)
             var hits = Set<UUID>()
             for el in doc.elements where !el.hidden {
-                if elementRect(el, s: s).intersects(paperMarquee) {
+                if elementRect(el, s: 1).intersects(paperMarquee) {
                     hits.insert(el.id)
                 }
             }
@@ -905,16 +905,17 @@ private struct GridLayer: View, Equatable {
             ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Design.bgCanvas))
             guard enabled else { return }
             let step: CGFloat = 8
+            var dots = Path()
             var y: CGFloat = step
             while y < size.height {
                 var x: CGFloat = step
                 while x < size.width {
-                    ctx.fill(Path(ellipseIn: CGRect(x: x - 0.5, y: y - 0.5, width: 1, height: 1)),
-                             with: .color(Design.canvasGrid))
+                    dots.addEllipse(in: CGRect(x: x - 0.5, y: y - 0.5, width: 1, height: 1))
                     x += step
                 }
                 y += step
             }
+            ctx.fill(dots, with: .color(Design.canvasGrid))
         }
         .allowsHitTesting(false)
     }
